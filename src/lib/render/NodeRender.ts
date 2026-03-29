@@ -134,7 +134,7 @@ function buildRoundedRectPath(
   br: number,
   bl: number,
 ): InstanceType<CanvasKit['Path']> {
-  const path = new ck.Path()
+  const path = new ck.PathBuilder()
   const k = 0.5523 // cubic bezier approximation of quarter-circle
   path.moveTo(x + tl, y)
   path.lineTo(x + w - tr, y)
@@ -146,7 +146,11 @@ function buildRoundedRectPath(
   path.lineTo(x, y + tl)
   path.cubicTo(x, y + tl * (1 - k), x + tl * (1 - k), y, x + tl, y)
   path.close()
-  return path
+
+  const result = path.snapshot()
+  path.delete()
+  
+  return result
 }
 
 // Fix #5: use InstanceType<CanvasKit['Paint']> not ReturnType
