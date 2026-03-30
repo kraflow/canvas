@@ -1,132 +1,258 @@
-import type { CanvasKit, Surface, Paint, Canvas, FontMgr } from 'canvaskit-wasm'
+import type { CanvasKit, Surface, Canvas, FontMgr, Image, InputColor } from 'canvaskit-wasm'
+
 import { loadCanvasKit } from '../load'
+import { renderImage, renderText, renderView, type LayoutRect } from './NodeRender'
+import type {
+  ResolvedImageStyle,
+  ResolvedTextStyle,
+  ResolvedViewStyle,
+} from '../styles/StyleResolver'
+
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type CachedImage = {
+  img: Image
+  refCount: number
+}
+
+export type DrawAPI = {
+  view: (layout: LayoutRect, style: ResolvedViewStyle) => void
+  text: (layout: LayoutRect, style: ResolvedTextStyle, content: string) => void
+  image: (layout: LayoutRect, style: ResolvedImageStyle, image: Image) => void
+  /** Direct access to the raw CanvasKit canvas for custom drawing */
+  raw: Canvas
+}
+
+export type DrawFn = (api: DrawAPI) => void
+
+// ─── Renderer ─────────────────────────────────────────────────────────────────
 
 export class Renderer {
   private ck: CanvasKit | null = null
   private surface: Surface | null = null
-  private paint: Paint | null = null
   private fontMgr: FontMgr | null = null
+
+  private cache = new Map<string, CachedImage>()
+
   private initialized = false
+  private _pixelRatio = window.devicePixelRatio || 1
+
+  // rAF loop
+  private rafId: number | null = null
+  private dirty = false
+  private currentDrawFn: DrawFn | null = null
+  private currentBgColor: InputColor | null = null
 
   constructor(private readonly canvasEl: HTMLCanvasElement) {}
 
-  async init(width: number, height: number) {
+  // ─── Init ──────────────────────────────────────────────────────────────────
+
+  async init(width: number, height: number): Promise<void> {
     if (this.initialized) return
 
     this.ck = await loadCanvasKit()
-    this.setCanvasSize(width, height)
-    this.createSurface()
-
-    const fontData = await fetch(
-      'https://fonts.gstatic.com/s/roboto/v32/KFOmCnqEu92Fr1Mu4mxKKTU1Kg.woff2',
-    ).then((r) => r.arrayBuffer())
-
-    this.fontMgr = this.ck.FontMgr.FromData(fontData)!
-
-    this.paint = new this.ck.Paint()
-    this.paint.setColor(this.ck.Color4f(0, 0, 0, 1)) // ✅ Color4f for float alpha
-    this.paint.setAntiAlias(true)
+    this._setCanvasSize(width, height)
+    this._createSurface()
+    this._startLoop()
 
     this.initialized = true
   }
 
-  // ---------- Public drawing API ----------
+  // ─── Fonts ─────────────────────────────────────────────────────────────────
 
-  draw(drawFn: (canvas: Canvas) => void) {
-    if (!this.surface || !this.ck) return
-    const dpr = window.devicePixelRatio || 1
+  async loadFonts(fonts: { url: string }[]): Promise<void> {
+    if (!this.ck) throw new Error('Renderer not initialized')
 
-    this.surface.drawOnce((canvas) => {
-      canvas.clear(this.ck!.Color4f(1, 1, 1, 1))
-      canvas.save()
-      canvas.scale(dpr, dpr) // scale up, draw in logical coords
-      drawFn(canvas)
-      canvas.restore()
-    })
+    const buffers = await Promise.all(fonts.map((f) => fetch(f.url).then((r) => r.arrayBuffer())))
+
+    this.fontMgr?.delete()
+    this.fontMgr = null
+
+    this.fontMgr = this.ck.FontMgr.FromData(...buffers)
+    if (!this.fontMgr) throw new Error('Failed to create FontMgr')
+  }
+
+  // ─── Draw ──────────────────────────────────────────────────────────────────
+
+  /**
+   * Schedule a redraw. Safe to call every frame — only repaints when dirty.
+   * Call this whenever your scene data changes.
+   */
+  draw(drawFn: DrawFn, bgColor?: InputColor): void {
+    if (!this.initialized) return
+    this.currentDrawFn = drawFn
+    this.currentBgColor = bgColor ?? null
+    this.dirty = true
+  }
+
+  /** Force an immediate repaint without waiting for the rAF loop. */
+  drawNow(drawFn: DrawFn, bgColor?: InputColor): void {
+    if (!this.initialized) return
+    this.currentDrawFn = drawFn
+    this.currentBgColor = bgColor ?? null
+    this._flush()
+  }
+
+  // ─── Resize ────────────────────────────────────────────────────────────────
+
+  resize(width: number, height: number): void {
+    if (!this.ck || !this.initialized) return
+
+    this._setCanvasSize(width, height)
+
+    // Recreate surface for new dimensions
+    this.surface?.delete()
+    this.surface = null
+    this._createSurface()
+
+    // Redraw on new surface
+    this.dirty = true
+  }
+
+  setPixelRatio(ratio: number): void {
+    this._pixelRatio = ratio
+  }
+
+  // ─── Images ────────────────────────────────────────────────────────────────
+
+  async loadImage(url: string): Promise<Image> {
+    const cached = this.cache.get(url)
+    if (cached) {
+      cached.refCount++
+      return cached.img
+    }
+
+    const buffer = await fetch(url).then((r) => r.arrayBuffer())
+    const img = this.ck!.MakeImageFromEncoded(new Uint8Array(buffer))
+    if (!img) throw new Error(`Failed to decode image: ${url}`)
+
+    this.cache.set(url, { img, refCount: 1 })
+    return img
+  }
+
+  releaseImage(url: string): void {
+    const cached = this.cache.get(url)
+    if (!cached) return
+
+    cached.refCount--
+    if (cached.refCount <= 0) {
+      cached.img.delete()
+      this.cache.delete(url)
+    }
+  }
+
+  // ─── Snapshot ──────────────────────────────────────────────────────────────
+
+  /**
+   * Export the current canvas as a PNG data URL.
+   * Useful for saving or sharing the rendered output.
+   */
+  toDataURL(type = 'image/png', quality = 1): string {
+    return this.canvasEl.toDataURL(type, quality)
   }
 
   /**
-   * Draws text on the canvas using CanvasKit
-   * @internal For Testing Purposes
+   * Export the current canvas as a Blob.
    */
-  drawText(
-    canvas: Canvas,
-    text: string,
-    x: number,
-    y: number,
-    fontSize = 32,
-    color = this.ck!.Color4f(0, 0, 0, 1),
-  ) {
-    if (!this.ck || !this.fontMgr) return
+  toBlob(type = 'image/png', quality = 1): Promise<Blob | null> {
+    return new Promise((resolve) => this.canvasEl.toBlob(resolve, type, quality))
+  }
 
-    const paraStyle = new this.ck.ParagraphStyle({
-      textStyle: {
-        color,
-        fontFamilies: ['Roboto'],
-        fontSize,
-      },
+  // ─── Getters ───────────────────────────────────────────────────────────────
+
+  getCk(): CanvasKit | null {
+    return this.ck
+  }
+
+  getSize(): { width: number; height: number } {
+    return {
+      width: this.canvasEl.clientWidth,
+      height: this.canvasEl.clientHeight,
+    }
+  }
+
+  getPixelRatio(): number {
+    return this._pixelRatio
+  }
+
+  isReady(): boolean {
+    return this.initialized && !!this.surface && !!this.fontMgr
+  }
+
+  // ─── Destroy ───────────────────────────────────────────────────────────────
+
+  destroy(): void {
+    if (!this.initialized) return
+    this.initialized = false
+
+    // Stop the loop first — nothing can draw after this
+    if (this.rafId !== null) {
+      cancelAnimationFrame(this.rafId)
+      this.rafId = null
+    }
+
+    this.cache.forEach(({ img }) => img.delete())
+    this.cache.clear()
+
+    this.fontMgr?.delete()
+    this.fontMgr = null
+
+    this.surface?.delete()
+    this.surface = null
+
+    this.ck = null
+    this.currentDrawFn = null
+  }
+
+  // ─── Private ───────────────────────────────────────────────────────────────
+
+  private _startLoop(): void {
+    const loop = () => {
+      if (this.dirty) {
+        this.dirty = false
+        this._flush()
+      }
+      this.rafId = requestAnimationFrame(loop)
+    }
+    this.rafId = requestAnimationFrame(loop)
+  }
+
+  private _flush(): void {
+    if (!this.surface || !this.ck || !this.fontMgr || !this.currentDrawFn) return
+
+    const ck = this.ck
+    const fontMgr = this.fontMgr
+    const surface = this.surface
+    const canvas = surface.getCanvas()
+
+    canvas.clear(this.currentBgColor ?? ck.WHITE)
+    canvas.save()
+    canvas.scale(this._pixelRatio, this._pixelRatio)
+
+    this.currentDrawFn({
+      view: (layout, style) => renderView(canvas, ck, layout, style),
+      text: (layout, style, content) => renderText(canvas, ck, fontMgr, layout, style, content),
+      image: (layout, style, image) => renderImage(canvas, ck, layout, style, image),
+      raw: canvas,
     })
 
-    const builder = this.ck.ParagraphBuilder.Make(paraStyle, this.fontMgr)
-    builder.addText(text)
-    const para = builder.build()
-    para.layout(1000)
-    canvas.drawParagraph(para, x, y)
-
-    para.delete()
-    builder.delete()
+    canvas.restore()
+    surface.flush()
   }
 
-  // ---------- Resize ----------
-
-  resize(width: number, height: number) {
-    if (!this.ck) return
-    this.setCanvasSize(width, height)
-    this.surface?.dispose()
-    this.createSurface()
-  }
-
-  // ---------- Helpers ----------
-
-  getCk() {
-    return this.ck!
-  }
-
-  getPaint() {
-    return this.paint!
-  }
-
-  getFontMgr() {
-    return this.fontMgr!
-  }
-
-  // ---------- Internal ----------
-
-  private setCanvasSize(width: number, height: number) {
-    const dpr = window.devicePixelRatio || 1
-    this.canvasEl.width = width * dpr // physical pixels
+  private _setCanvasSize(width: number, height: number): void {
+    const dpr = this._pixelRatio
+    this.canvasEl.width = width * dpr
     this.canvasEl.height = height * dpr
-    this.canvasEl.style.width = width + 'px' // CSS logical size
-    this.canvasEl.style.height = height + 'px'
+    this.canvasEl.style.width = `${width}px`
+    this.canvasEl.style.height = `${height}px`
   }
 
-  private createSurface() {
+  private _createSurface(): void {
+    if (!this.ck) throw new Error('CanvasKit not loaded')
     this.surface =
-      this.ck!.MakeWebGLCanvasSurface(this.canvasEl) ?? this.ck!.MakeSWCanvasSurface(this.canvasEl)
+      this.ck.MakeWebGLCanvasSurface(this.canvasEl) ?? this.ck.MakeSWCanvasSurface(this.canvasEl)
 
-    if (!this.surface) throw new Error('Failed to create CanvasKit surface')
-  }
-
-  // ---------- Cleanup ----------
-
-  destroy() {
-    this.surface?.dispose()
-    this.paint?.delete()
-    this.fontMgr?.delete()
-    this.surface = null
-    this.paint = null
-    this.fontMgr = null
-    this.ck = null
-    this.initialized = false
+    if (!this.surface) throw new Error('Failed to create surface')
   }
 }

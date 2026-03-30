@@ -1,4 +1,4 @@
-import type { CanvasKit } from 'canvaskit-wasm'
+import type { CanvasKit, EmbindEnumEntity } from 'canvaskit-wasm'
 import type { ViewStyle, TextStyle, ImageStyle, Color } from './types'
 
 /* ============================================================
@@ -69,13 +69,14 @@ export interface ResolvedTextStyle extends ResolvedViewStyle {
   letterSpacing: number | undefined
   heightMultiplier: number | undefined
   decoration: number
-  decorationStyle: ReturnType<CanvasKit['DecorationStyle']['Solid']['valueOf']>
+  decorationStyle: EmbindEnumEntity
   decorationColor: Float32Array
   textAlignValue: number
   textDirectionRTL: boolean
   textAlignVertical: 'top' | 'center' | 'bottom'
   fontFeatures: { name: string; value: number }[] | undefined
   textShadow: { color: Float32Array; offsetX: number; offsetY: number; blurRadius: number } | null
+  textTransform: 'none' | 'uppercase' | 'lowercase' | 'capitalize'
   // pre-transformed text is NOT cached here — it depends on runtime content
 }
 
@@ -95,11 +96,11 @@ export class StyleResolver {
 
   // ---- Public API ----
 
-  resolveView(style: ViewStyle, containerSize: { w: number; h: number }): ResolvedViewStyle {
+  view(style: ViewStyle, containerSize: { w: number; h: number }): ResolvedViewStyle {
     return this.resolveBase(style, containerSize)
   }
 
-  resolveText(style: TextStyle, containerSize: { w: number; h: number }): ResolvedTextStyle {
+  text(style: TextStyle, containerSize: { w: number; h: number }): ResolvedTextStyle {
     const base = this.resolveBase(style, containerSize)
     const ck = this.ck
 
@@ -208,10 +209,11 @@ export class StyleResolver {
         return { name: map[v] ?? v, value: 1 }
       }),
       textShadow,
+      textTransform: style.textTransform ?? 'none',
     }
   }
 
-  resolveImage(style: ImageStyle, containerSize: { w: number; h: number }): ResolvedImageStyle {
+  image(style: ImageStyle, containerSize: { w: number; h: number }): ResolvedImageStyle {
     const base = this.resolveBase(style, containerSize)
     const tintColor = style.tintColor ? this.parseColor(style.tintColor) : null
     return {

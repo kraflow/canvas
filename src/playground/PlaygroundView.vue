@@ -11,18 +11,68 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { Renderer } from '@/index'
+import { Renderer, StyleResolver, type LayoutRect } from '@/index'
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 let renderer: Renderer | null = null
 
-function render() {
-  if (!renderer) return
+const DEBUG = false
 
-  renderer.draw((canvas) => {
-    renderer!.drawText(canvas, 'Hello AK 🚀', 50, 100)
-    renderer!.drawText(canvas, 'CanvasKit + Vue', 50, 160)
-  })
+async function render() {
+  if (!renderer || DEBUG) return
+
+  const styleResolver = new StyleResolver(renderer.getCk()!)
+
+  const viewLayout: LayoutRect = { x: 0, y: 0, w: 200, h: 200 }
+  const viewStyle = styleResolver.view(
+    {
+      backgroundColor: '#ff0000',
+      opacity: 1,
+      borderWidth: 10,
+      borderColor: '#ff00ff',
+      borderRadius: 100,
+      boxShadow: [
+        {
+          color: '#00ff00',
+          offsetX: 0,
+          offsetY: 0,
+          blurRadius: 20,
+          inset: false,
+          spreadDistance: 10,
+        },
+      ],
+    },
+    viewLayout,
+  )
+
+  const textLayout: LayoutRect = { x: 200, y: 200, w: 200, h: 200 }
+  const textStyle = styleResolver.text(
+    {
+      color: '#f0ff00',
+      fontSize: 30,
+    },
+    textLayout,
+  )
+
+  const imageLayout: LayoutRect = { x: 400, y: 400, w: 200, h: 200 }
+  const imageStyle = styleResolver.image(
+    {
+      resizeMode: 'cover',
+    },
+    imageLayout,
+  )
+
+  const im = await renderer!.loadImage('https://picsum.photos/200/200')!
+
+  renderer.draw(
+    (d) => {
+      d.view(viewLayout, viewStyle)
+      d.text(textLayout, textStyle, 'Hello AK')
+
+      d.image(imageLayout, imageStyle, im)
+    },
+    [0, 0, 0, 1],
+  )
 }
 
 function resizeCanvas() {
@@ -36,6 +86,9 @@ onMounted(async () => {
 
   renderer = new Renderer(canvasRef.value)
   await renderer.init(window.innerWidth, window.innerHeight)
+  await renderer.loadFonts([
+    { url: 'https://fonts.gstatic.com/s/roboto/v30/KFOmCnqEu92Fr1Mu4mxK.woff2' },
+  ])
 
   render()
 
@@ -86,7 +139,6 @@ body {
   display: flex;
 }
 canvas {
-  border: 1px solid #ccc;
   flex: 1;
 }
 </style>
