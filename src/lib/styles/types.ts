@@ -106,6 +106,9 @@ export interface FlexStyle {
 
   /* Box model */
   boxSizing?: 'border-box' | 'content-box' // Added in 0.77+
+
+  overflow?: 'visible' | 'hidden' | 'scroll'
+  display?: 'flex' | 'none' | 'contents' // 'contents' added ~0.77
 }
 
 /* ------------------------------------------------------------
@@ -180,9 +183,7 @@ export interface ViewStyle extends FlexStyle, TransformsStyle {
   /* Visual */
   backgroundColor?: Color
   opacity?: number
-  overflow?: 'visible' | 'hidden' | 'scroll'
   zIndex?: number
-  display?: 'flex' | 'none' | 'contents' // 'contents' added ~0.77
   pointerEvents?: 'auto' | 'none' | 'box-none' | 'box-only'
 
   backfaceVisibility?: 'visible' | 'hidden'

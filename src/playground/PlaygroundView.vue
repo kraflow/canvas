@@ -11,7 +11,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { Renderer, StyleResolver, type LayoutRect } from '@/index'
+import { LayoutEngine, Renderer, StyleResolver, type LayoutRect } from '@/index'
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 let renderer: Renderer | null = null
@@ -22,36 +22,42 @@ async function render() {
   if (!renderer || DEBUG) return
 
   const styleResolver = new StyleResolver(renderer.getCk()!)
+  const layoutEngine = new LayoutEngine(renderer.getPixelRatio())
 
-  const viewLayout: LayoutRect = { x: 0, y: 0, w: 200, h: 200 }
+  layoutEngine
+    .createNode('root', {
+      width: 390,
+      height: 844,
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      justifyContent: 'center',
+    })
+    .createNode('text', {
+      width: 200,
+      height: 200,
+    })
+    .appendChild('root', 'text')
+    .calculate(390, 844)
+
   const viewStyle = styleResolver.view(
     {
-      backgroundColor: '#ff0000',
+      backgroundColor: '#ffdfaf',
       opacity: 1,
       borderWidth: 10,
       borderColor: '#ff00ff',
-      borderRadius: 100,
-      boxShadow: [
-        {
-          color: '#00ff00',
-          offsetX: 0,
-          offsetY: 0,
-          blurRadius: 20,
-          inset: false,
-          spreadDistance: 10,
-        },
-      ],
     },
-    viewLayout,
+    layoutEngine.getLayout('root'),
   )
 
-  const textLayout: LayoutRect = { x: 200, y: 200, w: 200, h: 200 }
   const textStyle = styleResolver.text(
     {
       color: '#f0ff00',
       fontSize: 30,
+      borderWidth: 1,
+      borderColor: 'aqua',
     },
-    textLayout,
+    layoutEngine.getLayout('text'),
   )
 
   const imageLayout: LayoutRect = { x: 400, y: 400, w: 200, h: 200 }
@@ -66,8 +72,8 @@ async function render() {
 
   renderer.draw(
     (d) => {
-      d.view(viewLayout, viewStyle)
-      d.text(textLayout, textStyle, 'Hello AK')
+      d.view(layoutEngine.getLayout('root'), viewStyle)
+      d.text(layoutEngine.getLayout('text'), textStyle, 'Hello AK')
 
       d.image(imageLayout, imageStyle, im)
     },
