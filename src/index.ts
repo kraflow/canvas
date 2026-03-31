@@ -15,3 +15,5 @@ export type * from '@/lib/styles/types'
 
 export type { LayoutRect } from '@/lib/render/NodeRender'
 export { LayoutEngine } from '@/lib/layout/LayoutEngine'
+
+export * from '@/lib/scene'

@@ -11,6 +11,7 @@ import Yoga, {
   Display,
   Edge,
   Gutter,
+  BoxSizing,
 } from 'yoga-layout'
 import type { FlexStyle } from '../styles/types'
 import type { LayoutRect } from '../render/NodeRender'
@@ -77,6 +78,8 @@ function resetAllProperties(yn: YogaNode): void {
     yn.setPadding(edge, NaN)
   }
 
+  yn.setBoxSizing(BoxSizing.BorderBox)
+
   // gap
   yn.setGap(Gutter.All, NaN)
 
@@ -99,6 +102,10 @@ function parseLength(value: number | string): number | 'auto' | `${number}%` {
 }
 
 function applyFlexStyle(yn: YogaNode, style: FlexStyle): void {
+  if (style.boxSizing !== undefined) {
+    yn.setBoxSizing(style.boxSizing === 'content-box' ? BoxSizing.ContentBox : BoxSizing.BorderBox)
+  }
+
   // --- dimensions ---
   if (style.width !== undefined) {
     const v = parseLength(style.width as string | number)
