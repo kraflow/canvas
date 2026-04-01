@@ -1,8 +1,19 @@
-import type { NodeID, NodeStyle, NodeType, SceneNode, Screen, ViewSceneNode, WalkFn } from './types'
+import type {
+  NodeID,
+  NodeStyle,
+  NodeType,
+  SceneNode,
+  Screen,
+  SpatialEntry,
+  ViewSceneNode,
+  WalkFn,
+} from './types'
 import { applyFlexStyle, resetAllProperties } from '../layout/LayoutEngine'
 import type { StyleResolver } from '../styles/StyleResolver'
 import Yoga, { type Config, Direction, type Node as YogaNode } from 'yoga-layout'
 import type { FlexStyle } from '../styles/types'
+import { createTextMeasureFunction } from './measure'
+import type { Renderer } from '../render/Renderer'
 
 export class Scene {
   private index = new Map<NodeID, SceneNode>()
@@ -10,12 +21,26 @@ export class Scene {
   private screenOrder: NodeID[] = []
   private readonly config: Config
 
+  /**
+   * Spatial index — one flat sorted array per screen.
+   * Sorted deepest-first so the first AABB match in a point query is always
+   * the topmost visual node. Rebuilt at the end of every calculateLayout.
+   */
+  private spatialIndex = new Map<NodeID, SpatialEntry[]>()
+
+  /**
+   * Reverse map from any node ID to the screen it lives in.
+   * Populated in indexSubtree, cleared in unindexSubtree.
+   * Lets callers query by node ID without knowing which screen it belongs to.
+   */
+  private nodeToScreen = new Map<NodeID, NodeID>()
+
   constructor(
     private readonly resolver: StyleResolver,
-    pixelRatio: number,
+    private readonly renderer: Renderer,
   ) {
     this.config = Yoga.Config.create()
-    this.config.setPointScaleFactor(pixelRatio)
+    this.config.setPointScaleFactor(renderer.getPixelRatio())
   }
 
   /* ----------------------------------------------------------
@@ -37,14 +62,17 @@ export class Scene {
   calculateLayout(screenId: NodeID, direction: 'ltr' | 'rtl' = 'ltr'): void {
     const screen = this.getScreen(screenId)
     screen.yogaNode!.calculateLayout(
-      screen.width,
-      screen.height,
+      screen.rect.w,
+      screen.rect.h,
       direction === 'ltr' ? Direction.LTR : Direction.RTL,
     )
 
+    // Resolve screen style now that rect is populated
+    this.resolveNodeStyle(screen)
+
     // Screen origin is its world position (set by moveScreen)
-    const originX = screen.x ?? 0
-    const originY = screen.y ?? 0
+    const originX = screen.rect.x ?? 0
+    const originY = screen.rect.y ?? 0
 
     this.walk(screenId, (node, parent) => {
       const parentAbsX = parent?.rect?.absX ?? originX
@@ -54,10 +82,10 @@ export class Scene {
       const relY = node.yogaNode!.getComputedTop()
 
       node.rect = {
-        x: relX,
-        y: relY,
-        absX: parentAbsX + relX,
-        absY: parentAbsY + relY,
+        absX: relX,
+        absY: relY,
+        x: parentAbsX + relX,
+        y: parentAbsY + relY,
         w: node.yogaNode!.getComputedWidth(),
         h: node.yogaNode!.getComputedHeight(),
       }
@@ -65,6 +93,10 @@ export class Scene {
       // Resolve visual style now that rect is populated.
       this.resolveNodeStyle(node)
     })
+
+    // Rebuild spatial index from the freshly computed rects.
+    // Done after the walk so every node.rect is guaranteed to be current.
+    this.rebuildSpatialIndex(screenId)
   }
 
   /* ----------------------------------------------------------
@@ -111,6 +143,102 @@ export class Scene {
     })
   }
 
+  /* ----------------------------------------------------------
+   * Hit testing
+   * ---------------------------------------------------------- */
+
+  /**
+   * Returns the topmost node whose AABB contains the world-space point (x, y)
+   * within the given screen, or null if no node is hit.
+   *
+   * "Topmost" means the deepest node in DFS order — i.e. the one that would
+   * be painted last and therefore appears visually on top.
+   *
+   * O(n) scan over a flat pre-sorted array — fast constant due to no pointer
+   * chasing and early exit on first match.
+   */
+  pointHit(screenId: NodeID, x: number, y: number): SceneNode | null {
+    const entries = this.spatialIndex.get(screenId)
+    if (!entries) return null
+
+    for (const e of entries) {
+      if (x >= e.absX && x <= e.absX2 && y >= e.absY && y <= e.absY2) {
+        return this.index.get(e.id) ?? null
+      }
+    }
+    return null
+  }
+
+  /**
+   * Returns all nodes whose AABB contains (x, y), ordered topmost-first.
+   * Use this to build a hover stack, tooltip chain, or pointer-events cascade.
+   */
+  pointHitAll(screenId: NodeID, x: number, y: number): SceneNode[] {
+    const entries = this.spatialIndex.get(screenId)
+    if (!entries) return []
+
+    const result: SceneNode[] = []
+    for (const e of entries) {
+      if (x >= e.absX && x <= e.absX2 && y >= e.absY && y <= e.absY2) {
+        const node = this.index.get(e.id)
+        if (node) result.push(node)
+      }
+    }
+    return result
+  }
+
+  /**
+   * Returns all nodes whose AABB overlaps the given world-space rectangle,
+   * ordered topmost-first. Use this for marquee / rubber-band selection.
+   */
+  regionHit(screenId: NodeID, rect: { x: number; y: number; w: number; h: number }): SceneNode[] {
+    const entries = this.spatialIndex.get(screenId)
+    if (!entries) return []
+
+    const rx2 = rect.x + rect.w
+    const ry2 = rect.y + rect.h
+    const result: SceneNode[] = []
+
+    for (const e of entries) {
+      // AABB overlap: NOT (right < left OR left > right OR bottom < top OR top > bottom)
+      if (e.absX2 >= rect.x && e.absX <= rx2 && e.absY2 >= rect.y && e.absY <= ry2) {
+        const node = this.index.get(e.id)
+        if (node) result.push(node)
+      }
+    }
+    return result
+  }
+
+  /**
+   * Returns the screen ID that owns the given node, or undefined if the node
+   * is not currently in the scene. Avoids callers having to thread screenId
+   * through every operation that only has a node ID.
+   */
+  getScreenForNode(id: NodeID): NodeID | undefined {
+    return this.nodeToScreen.get(id)
+  }
+
+  /**
+   * Given a world-space point, returns the screen whose bounding rectangle
+   * contains it, or null. Screens are checked in reverse paint order so the
+   * topmost screen wins when they overlap.
+   *
+   * This is the entry point for pointer events on the infinite canvas —
+   * call this first, then call pointHit with the returned screenId.
+   */
+  screenAtPoint(x: number, y: number): Screen | null {
+    // Reverse order — last in screenOrder is painted on top
+    for (let i = this.screenOrder.length - 1; i >= 0; i--) {
+      const screen = this.screens.get(this.screenOrder[i]!)!
+      const sx = screen.rect.x ?? 0
+      const sy = screen.rect.y ?? 0
+      if (x >= sx && x <= sx + screen.rect.w && y >= sy && y <= sy + screen.rect.h) {
+        return screen
+      }
+    }
+    return null
+  }
+
   private createYogaNode(style?: FlexStyle): YogaNode {
     const node = Yoga.Node.createWithConfig(this.config)
     if (style) applyFlexStyle(node, style)
@@ -127,8 +255,8 @@ export class Scene {
     }
 
     screen.yogaNode = this.createYogaNode({
-      height: screen.height,
-      width: screen.width,
+      height: screen.rect.h,
+      width: screen.rect.w,
     })
 
     this.screens.set(screen.id, screen)
@@ -157,12 +285,13 @@ export class Scene {
 
     this.screens.delete(id)
     this.screenOrder = this.screenOrder.filter((s) => s !== id)
+    this.spatialIndex.delete(id)
   }
 
   moveScreen(id: NodeID, x: number, y: number): void {
     const screen = this.getScreen(id)
-    screen.x = x
-    screen.y = y
+    screen.rect.x = x
+    screen.rect.y = y
   }
 
   /**
@@ -171,8 +300,9 @@ export class Scene {
    */
   resizeScreen(id: NodeID, width: number, height: number): void {
     const screen = this.getScreen(id)
-    screen.width = width
-    screen.height = height
+    screen.rect.w = width
+    screen.rect.h = height
+
     // Keep the yoga node in sync — without this, calculateLayout ignores the
     // new dimensions because it still reads the stale values from the yoga node.
     applyFlexStyle(screen.yogaNode!, { width, height })
@@ -296,15 +426,6 @@ export class Scene {
     }
 
     node.style = style
-
-    if (node.rect) {
-      // Rect is available: resolve immediately so resolvedStyle stays in sync.
-      this.resolveNodeStyle(node)
-    } else {
-      // Rect not yet available (node added before first layout pass).
-      // Clear any stale resolvedStyle so the renderer doesn't use outdated data.
-      node.resolvedStyle = undefined
-    }
   }
 
   /* ----------------------------------------------------------
@@ -350,8 +471,9 @@ export class Scene {
     }
   }
 
-  walk(screenId: NodeID, fn: WalkFn): void {
+  walk(screenId: NodeID, fn: WalkFn, includeSelf = true): void {
     const screen = this.getScreen(screenId)
+    if (includeSelf) fn(screen, null, 0)
     screen.children.forEach((node) => this.walkNode(node, null, fn, 0))
   }
 
@@ -420,25 +542,6 @@ export class Scene {
     }
   }
 
-  static fromJSON(
-    data: { screens: Screen[]; order: NodeID[] },
-    resolver: StyleResolver,
-    pixelRatio: number,
-  ): Scene {
-    const scene = new Scene(resolver, pixelRatio)
-    const screenMap = new Map(data.screens.map((s) => [s.id, s]))
-
-    for (const id of data.order) {
-      const screen = screenMap.get(id)
-      if (!screen) {
-        throw new Error(`Scene.fromJSON: screen "${id}" listed in order but missing from screens.`)
-      }
-      scene.addScreen(screen)
-    }
-
-    return scene
-  }
-
   /* ----------------------------------------------------------
    * Private helpers
    * ---------------------------------------------------------- */
@@ -457,6 +560,9 @@ export class Scene {
     }
 
     switch (node.type) {
+      case 'screen':
+        node.resolvedStyle = this.resolver.view(node.style, node.rect)
+        break
       case 'view':
         node.resolvedStyle = this.resolver.view(node.style, node.rect)
         break
@@ -498,7 +604,15 @@ export class Scene {
     // createYogaNode already applies the flex style — do not call updateStyle
     // here to avoid a double-apply and a premature resolver call (rect is null).
     node.yogaNode = this.createYogaNode(node.style as FlexStyle | undefined)
+    if (node.type === 'text') {
+      node.yogaNode.setMeasureFunc(createTextMeasureFunction(this.renderer, this.resolver, node))
+    }
     this.index.set(node.id, node)
+
+    // Track which screen this node belongs to so callers can resolve
+    // screenId from a node ID alone (used by hit-test helpers).
+    const screenId = this.resolveScreenId(parent)
+    if (screenId) this.nodeToScreen.set(node.id, screenId)
 
     const children = (node as ViewSceneNode).children ?? []
 
@@ -524,6 +638,49 @@ export class Scene {
     node.yogaNode!.free()
     node.yogaNode = undefined
     this.index.delete(node.id)
+    this.nodeToScreen.delete(node.id)
+  }
+
+  /**
+   * Rebuild the flat spatial index for one screen from its current rects.
+   * Called at the end of calculateLayout — never call before rects are set.
+   *
+   * The array is sorted deepest-first (highest depth wins) so that the first
+   * AABB match in pointHit is the topmost visual node without needing a
+   * secondary pass.
+   */
+  private rebuildSpatialIndex(screenId: NodeID): void {
+    const entries: SpatialEntry[] = []
+
+    this.walk(screenId, (node, _parent, depth) => {
+      if (!node.rect) return
+      entries.push({
+        id: node.id,
+        absX: node.rect.x,
+        absY: node.rect.y,
+        absX2: node.rect.x + node.rect.w,
+        absY2: node.rect.y + node.rect.h,
+        depth,
+      })
+    })
+
+    entries.sort((a, b) => b.depth - a.depth)
+    this.spatialIndex.set(screenId, entries)
+  }
+
+  /**
+   * Walks up the parent chain from a given node ID to find the screen root.
+   * Used during indexSubtree to populate nodeToScreen.
+   *
+   * We check the screens map first because top-level children of a screen
+   * have `parent = screenId`, and screenId IS a valid screen — not a node.
+   */
+  private resolveScreenId(parentId?: NodeID): NodeID | undefined {
+    if (!parentId) return undefined
+    // If the parent is a screen, we're done
+    if (this.screens.has(parentId)) return parentId
+    // Otherwise walk up via nodeToScreen (already populated for ancestors)
+    return this.nodeToScreen.get(parentId)
   }
 
   private assertNotIndexed(id: NodeID): void {

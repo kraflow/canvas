@@ -1,4 +1,4 @@
-import type { Canvas, CanvasKit, FontMgr, Image } from 'canvaskit-wasm'
+import type { Canvas, CanvasKit, FontMgr, Image, Paragraph } from 'canvaskit-wasm'
 import type {
   ResolvedViewStyle,
   ResolvedTextStyle,
@@ -275,23 +275,14 @@ export function renderView(
 /* ============================================================
  * renderText — zero style parsing, uses pre-resolved ParagraphStyle fields
  * ============================================================ */
-export function renderText(
-  canvas: Canvas,
+export function createAndLayoutParagraph(
   ck: CanvasKit,
   fontMgr: FontMgr,
-  layout: LayoutRect,
   rs: ResolvedTextStyle,
   content: string,
-): void {
-  const { x, y, w, h } = layout
-
-  // Draw the box layer first
-  renderView(canvas, ck, layout, rs)
-
-  canvas.save()
-  if (rs.clipContent) applyClip(canvas, ck, x, y, w, h, rs.radius)
-
-  // textTransform — only thing that depends on runtime content
+  availableWidth: number, // width constraint from Yoga
+): { paragraph: Paragraph; textHeight: number; longestLine: number } {
+  // Apply textTransform (same as in renderText)
   let text = content
   switch (rs.textTransform) {
     case 'uppercase':
@@ -310,7 +301,7 @@ export function renderText(
   const paraStyle = new ck.ParagraphStyle({
     textAlign: { value: rs.textAlignValue } as never,
     textStyle: {
-      color: rs.color,
+      color: rs.color, // color not used for measure, but harmless
       fontFamilies: rs.fontFamilies,
       fontSize: rs.fontSize,
       fontStyle: {
@@ -339,17 +330,42 @@ export function renderText(
   const builder = ck.ParagraphBuilder.Make(paraStyle, fontMgr)
   builder.addText(text)
   const para = builder.build()
-  para.layout(w)
+
+  para.layout(availableWidth) // This is the key for wrapping
 
   const textHeight = para.getHeight()
+  const longestLine = para.getLongestLine() // useful for intrinsic width
+
+  // Clean up builder immediately (paragraph is returned)
+  builder.delete()
+
+  return { paragraph: para, textHeight, longestLine }
+}
+
+export function renderText(
+  canvas: Canvas,
+  ck: CanvasKit,
+  fontMgr: FontMgr,
+  layout: LayoutRect,
+  rs: ResolvedTextStyle,
+  content: string,
+): void {
+  const { x, y, w, h } = layout
+
+  renderView(canvas, ck, layout, rs) // background box
+
+  canvas.save()
+  if (rs.clipContent) applyClip(canvas, ck, x, y, w, h, rs.radius)
+
+  const { paragraph, textHeight } = createAndLayoutParagraph(ck, fontMgr, rs, content, w)
+
   let textY = y
   if (rs.textAlignVertical === 'center') textY = y + (h - textHeight) / 2
   else if (rs.textAlignVertical === 'bottom') textY = y + h - textHeight
 
-  canvas.drawParagraph(para, x, textY)
-  para.delete()
-  builder.delete()
+  canvas.drawParagraph(paragraph, x, textY)
 
+  paragraph.delete() // important!
   canvas.restore()
 }
 

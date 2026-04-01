@@ -164,6 +164,10 @@ export class Renderer {
     return this.ck
   }
 
+  getFontMgr(): FontMgr | null {
+    return this.fontMgr
+  }
+
   getSize(): { width: number; height: number } {
     return {
       width: this.canvasEl.clientWidth,

@@ -10,7 +10,7 @@
   <div class="canvas-container">
     <!-- Shown until the renderer is ready -->
     <div v-if="!ready" class="loader">
-      <span>{{ status || 'Initialising…' }}</span>
+      <span>{{ status || 'Initializing...' }}</span>
     </div>
     <canvas ref="canvasRef" :class="{ hidden: !ready }" />
   </div>
@@ -18,7 +18,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { createScreen, h, Renderer, Scene, StyleResolver } from '@/index'
+import { h, Renderer, Scene, StyleResolver } from '@/index'
 
 // ---------------------------------------------------------------------------
 // Refs / state
@@ -26,7 +26,7 @@ import { createScreen, h, Renderer, Scene, StyleResolver } from '@/index'
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const ready = ref(false)
-const status = ref('Initialising renderer…')
+const status = ref('Initializing renderer…')
 
 let renderer: Renderer | null = null
 let scene: Scene | null = null
@@ -87,7 +87,7 @@ async function render(): Promise<void> {
       // Guard: skip nodes that have not been through calculateLayout yet.
       if (!node.rect || !node.resolvedStyle) return
 
-      if (node.type === 'view') {
+      if (node.type === 'view' || node.type === 'screen') {
         d.view(node.rect, node.resolvedStyle)
       } else if (node.type === 'text') {
         d.text(node.rect, node.resolvedStyle, node.text)
@@ -132,16 +132,24 @@ onMounted(async () => {
     // 3. Build scene
     status.value = 'Building scene…'
     styleResolver = new StyleResolver(renderer.getCk()!)
-    scene = new Scene(styleResolver, renderer.getPixelRatio())
+    scene = new Scene(styleResolver, renderer)
 
-    const loginScreen = createScreen({
-      id: 'login',
-      label: 'Login',
-      x: 0,
-      y: 0,
-      width: 390,
-      height: 844,
-      children: [
+    const loginScreen = h(
+      'screen',
+      {
+        label: 'Login',
+        rect: {
+          x: 0,
+          y: 0,
+          w: 390,
+          h: 844,
+        },
+        style: {
+          borderWidth: 1,
+          borderColor: '#111111',
+        },
+      },
+      [
         h(
           'view',
           {
@@ -201,7 +209,8 @@ onMounted(async () => {
           ],
         ),
       ],
-    })
+      'login',
+    )
 
     scene.addScreen(loginScreen)
     scene.calculateLayout('login')

@@ -16,6 +16,7 @@ export type NodeType =
   | 'view' // generic container
   | 'text' // text leaf
   | 'image' // image leaf
+  | 'screen' // screen root
 
 /* ============================================================
  * Style mapping — derived from node type
@@ -33,8 +34,8 @@ export type NodeResolvedStyle<T extends NodeType> = T extends 'text'
     : ResolvedViewStyle
 
 export type LayoutRect = Rect & {
-  absX: number
-  absY: number
+  absX?: number
+  absY?: number
 }
 
 interface BaseSceneNode<T extends NodeType = NodeType> {
@@ -68,7 +69,9 @@ export type SceneNode<T extends NodeType = NodeType> = T extends 'image'
     ? TextSceneNode
     : T extends 'view'
       ? ViewSceneNode
-      : never
+      : T extends 'screen'
+        ? Screen
+        : never
 
 /* ============================================================
  * Screen
@@ -78,22 +81,10 @@ export type SceneNode<T extends NodeType = NodeType> = T extends 'image'
  * Screens can be referenced by other nodes (type: 'screen')
  * to act as reusable components.
  * ============================================================ */
-export interface Screen {
-  id: NodeID
+export interface Screen extends BaseSceneNode<'screen'> {
   label?: string
 
-  /** World-space position on the infinite canvas */
-  x: number
-  y: number
-
-  /** Width/height of the screen's layout root — passed to Yoga */
-  width: number
-  height: number
-
-  /** Yoga node for layout */
-  yogaNode?: YogaNode
-
-  /** The root node of this screen's content */
+  rect: LayoutRect
   children: SceneNode[]
 }
 
@@ -102,3 +93,20 @@ export interface Screen {
  * ============================================================ */
 export type WalkFn = (node: SceneNode, parent: SceneNode | null, depth: number) => void | false
 // returning false stops traversal of that subtree
+
+/**
+ * One entry per node in the spatial index.
+ * Stores pre-computed world-space AABB and DFS depth so hit tests need
+ * nothing from the node object itself — the loop is a tight struct scan.
+ *
+ * absX2 / absY2 are stored pre-computed (absX + w, absY + h) so the
+ * containment check is four comparisons with no arithmetic per entry.
+ */
+export interface SpatialEntry {
+  readonly id: NodeID
+  readonly absX: number
+  readonly absY: number
+  readonly absX2: number // absX + w
+  readonly absY2: number // absY + h
+  readonly depth: number // DFS depth — higher = visually on top
+}

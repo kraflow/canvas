@@ -62,24 +62,26 @@ export interface ResolvedViewStyle {
   display: boolean
 }
 
-export interface ResolvedTextStyle extends ResolvedViewStyle {
-  // text
-  color: Float32Array
+export interface BaseResolvedTextStyle {
   fontSize: number
   fontFamilies: string[]
   fontWeight: number
   italic: boolean
   letterSpacing: number | undefined
   heightMultiplier: number | undefined
+  textAlignValue: number
+  textDirectionRTL: boolean
+  fontFeatures: { name: string; value: number }[] | undefined
+  textTransform: 'none' | 'uppercase' | 'lowercase' | 'capitalize'
+}
+
+export interface ResolvedTextStyle extends BaseResolvedTextStyle, ResolvedViewStyle {
+  color: Float32Array
   decoration: number
   decorationStyle: EmbindEnumEntity
   decorationColor: Float32Array
-  textAlignValue: number
-  textDirectionRTL: boolean
   textAlignVertical: 'top' | 'center' | 'bottom'
-  fontFeatures: { name: string; value: number }[] | undefined
   textShadow: { color: Float32Array; offsetX: number; offsetY: number; blurRadius: number } | null
-  textTransform: 'none' | 'uppercase' | 'lowercase' | 'capitalize'
   // pre-transformed text is NOT cached here — it depends on runtime content
 }
 
@@ -152,15 +154,31 @@ const LAYOUT_KEYS = new Set<keyof FlexStyle>([
   'display',
 ])
 
+export const TEXT_LAYOUT_PROPS = [
+  'fontSize',
+  'fontFamily',
+  'fontWeight',
+  'fontStyle',
+  'fontVariant',
+  'letterSpacing',
+  'lineHeight',
+  'textTransform',
+  'writingDirection',
+  'textAlign',
+]
+
 /* ============================================================
  * StyleResolver
  * Call .resolveView / .resolveText / .resolveImage once when
  * style is set or updated. Pass the result to render functions.
  * ============================================================ */
 export class StyleResolver {
-  constructor(private readonly ck: CanvasKit) {}
+  constructor(private ck: CanvasKit) {}
 
   // ---- Public API ----
+  setCk(ck: CanvasKit) {
+    this.ck = ck
+  }
 
   view(style: ViewStyle, containerSize: { w: number; h: number }): ResolvedViewStyle {
     return this.resolveBase(style, containerSize)
@@ -170,21 +188,7 @@ export class StyleResolver {
     const base = this.resolveBase(style, containerSize)
     const ck = this.ck
 
-    const fontSize = style.fontSize ?? 16
-    const weightMap: Record<string, number> = {
-      normal: 400,
-      bold: 700,
-      '100': 100,
-      '200': 200,
-      '300': 300,
-      '400': 400,
-      '500': 500,
-      '600': 600,
-      '700': 700,
-      '800': 800,
-      '900': 900,
-    }
-
+    const baseText = this.buildTextLayoutStyle(style)
     const color = style.color ? this.parseColor(style.color) : ck.Color4f(0, 0, 0, 1)
 
     const decoration = (() => {
@@ -213,6 +217,59 @@ export class StyleResolver {
       }
     })()
 
+    const textShadow =
+      style.textShadowColor && style.textShadowOffset
+        ? {
+            color: this.parseColor(style.textShadowColor),
+            offsetX: style.textShadowOffset.width,
+            offsetY: style.textShadowOffset.height,
+            blurRadius: style.textShadowRadius ?? 0,
+          }
+        : null
+
+    return {
+      ...base,
+      ...baseText,
+      color,
+      decoration,
+      decorationStyle,
+      decorationColor: style.textDecorationColor
+        ? this.parseColor(style.textDecorationColor)
+        : color,
+      textAlignVertical: (style.textAlignVertical as 'top' | 'center' | 'bottom') ?? 'top',
+      textShadow,
+    }
+  }
+
+  image(style: ImageStyle, containerSize: { w: number; h: number }): ResolvedImageStyle {
+    const base = this.resolveBase(style, containerSize)
+    const tintColor = style.tintColor ? this.parseColor(style.tintColor) : null
+    return {
+      ...base,
+      mode: (style.objectFit ?? style.resizeMode ?? 'cover') as ResolvedImageStyle['mode'],
+      hasTint: tintColor !== null,
+      tintColor,
+    }
+  }
+
+  buildTextLayoutStyle(style: TextStyle): BaseResolvedTextStyle {
+    const ck = this.ck
+
+    const fontSize = style.fontSize ?? 16
+    const weightMap: Record<string, number> = {
+      normal: 400,
+      bold: 700,
+      '100': 100,
+      '200': 200,
+      '300': 300,
+      '400': 400,
+      '500': 500,
+      '600': 600,
+      '700': 700,
+      '800': 800,
+      '900': 900,
+    }
+
     const textAlignValue = (() => {
       switch (style.textAlign) {
         case 'left':
@@ -228,16 +285,6 @@ export class StyleResolver {
       }
     })()
 
-    const textShadow =
-      style.textShadowColor && style.textShadowOffset
-        ? {
-            color: this.parseColor(style.textShadowColor),
-            offsetX: style.textShadowOffset.width,
-            offsetY: style.textShadowOffset.height,
-            blurRadius: style.textShadowRadius ?? 0,
-          }
-        : null
-
     const heightMultiplier = style.lineHeight
       ? typeof style.lineHeight === 'number'
         ? style.lineHeight / fontSize
@@ -245,8 +292,6 @@ export class StyleResolver {
       : undefined
 
     return {
-      ...base,
-      color,
       fontSize,
       fontFamilies: style.fontFamily ? [style.fontFamily] : ['Roboto'],
       fontWeight:
@@ -256,14 +301,8 @@ export class StyleResolver {
       italic: style.fontStyle === 'italic',
       letterSpacing: style.letterSpacing,
       heightMultiplier,
-      decoration,
-      decorationStyle,
-      decorationColor: style.textDecorationColor
-        ? this.parseColor(style.textDecorationColor)
-        : color,
       textAlignValue,
       textDirectionRTL: style.writingDirection === 'rtl',
-      textAlignVertical: (style.textAlignVertical as 'top' | 'center' | 'bottom') ?? 'top',
       fontFeatures: style.fontVariant?.map((v) => {
         const map: Record<string, string> = {
           'small-caps': 'smcp',
@@ -274,26 +313,16 @@ export class StyleResolver {
         }
         return { name: map[v] ?? v, value: 1 }
       }),
-      textShadow,
       textTransform: style.textTransform ?? 'none',
     }
   }
 
-  image(style: ImageStyle, containerSize: { w: number; h: number }): ResolvedImageStyle {
-    const base = this.resolveBase(style, containerSize)
-    const tintColor = style.tintColor ? this.parseColor(style.tintColor) : null
-    return {
-      ...base,
-      mode: (style.objectFit ?? style.resizeMode ?? 'cover') as ResolvedImageStyle['mode'],
-      hasTint: tintColor !== null,
-      tintColor,
-    }
-  }
+  hasLayoutChanged<S extends TextStyle | FlexStyle>(prev: S, next: S, isText = false): boolean {
+    const STYLE_PROPERTIES = isText ? TEXT_LAYOUT_PROPS : LAYOUT_KEYS
 
-  hasLayoutChanged(prev: FlexStyle, next: FlexStyle): boolean {
-    for (const key of LAYOUT_KEYS) {
-      const pv = prev[key]
-      const nv = next[key]
+    for (const key of STYLE_PROPERTIES) {
+      const pv = prev[key as keyof S]
+      const nv = next[key as keyof S]
 
       if (pv !== nv) {
         return true
