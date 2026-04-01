@@ -1,12 +1,4 @@
-import type {
-  NodeID,
-  NodeType,
-  SceneNode,
-  Screen,
-  SceneNodeProps,
-  Expr,
-  DynamicExpression,
-} from './types'
+import type { NodeID, NodeType, SceneNode, Screen } from './types'
 
 /* ============================================================
  * ID generation
@@ -24,54 +16,44 @@ export function generateId(prefix = 'n'): NodeID {
  * objects. No class needed since SceneNode is pure data.
  * ============================================================ */
 
-export function createNode<T extends NodeType>(
+export function createNode<T extends NodeType = 'view'>(
   type: T,
-  props?: Partial<SceneNodeProps<T>>,
+  style?: SceneNode<T>['style'],
   children?: SceneNode[],
   id?: NodeID,
+): SceneNode<T>
+
+export function createNode<T extends NodeType = 'text'>(
+  type: T,
+  style?: SceneNode<T>['style'],
+  text?: string,
+  id?: NodeID,
+): SceneNode<T>
+
+export function createNode<T extends NodeType = 'image'>(
+  type: T,
+  style?: SceneNode<T>['style'],
+  src?: string,
+  id?: NodeID,
+): SceneNode<T>
+
+export function createNode<T extends NodeType>(
+  type: T,
+  style?: SceneNode<T>['style'],
+  children?: SceneNode[] | string,
+  id?: NodeID,
 ): SceneNode<T> {
+  // @ts-expect-error Ignore it
   return {
     id: id ?? generateId(type),
     type,
-    props,
-    children: children?.length ? children : undefined,
+    style,
+    ...(typeof children === 'string'
+      ? type == 'image'
+        ? { src: children }
+        : { text: children }
+      : { children: children }),
   }
-}
-
-/** Shorthand builders for built-in types */
-
-export function view(
-  props?: Partial<SceneNodeProps<'view'>>,
-  children?: SceneNode[],
-  id?: NodeID,
-): SceneNode<'view'> {
-  return createNode('view', props, children, id)
-}
-
-export function text(
-  content: string | Expr<string>,
-  props?: Omit<Partial<SceneNodeProps<'text'>>, 'text'>,
-  id?: NodeID,
-): SceneNode<'text'> {
-  return createNode(
-    'text',
-    { ...props, text: content } as Partial<SceneNodeProps<'text'>>,
-    undefined,
-    id,
-  )
-}
-
-export function image(
-  src: string | Expr<string>,
-  props?: Omit<Partial<SceneNodeProps<'image'>>, 'src'>,
-  id?: NodeID,
-): SceneNode<'image'> {
-  return createNode('image', { ...props, src } as Partial<SceneNodeProps<'image'>>, undefined, id)
-}
-
-/** Reference another screen as a component */
-export function screenRef(screenId: NodeID, id?: NodeID): SceneNode<'screen'> {
-  return createNode('screen', { screenId } as Partial<SceneNodeProps<'screen'>>, undefined, id)
 }
 
 /* ============================================================
@@ -85,7 +67,7 @@ export function createScreen(options: {
   y?: number
   width: number
   height: number
-  root: SceneNode<'view'>
+  children: SceneNode[]
 }): Screen {
   return {
     id: options.id ?? generateId('screen'),
@@ -94,26 +76,6 @@ export function createScreen(options: {
     y: options.y ?? 0,
     width: options.width,
     height: options.height,
-    root: options.root,
+    children: options.children,
   }
-}
-
-/** Type guard — true if value is a DynamicExpression */
-export function isExpr<T>(v: Expr<T>): v is DynamicExpression<T> {
-  return (
-    typeof v === 'object' &&
-    v !== null &&
-    '__' in (v as object) &&
-    (v as DynamicExpression<T>).__ === 'e'
-  )
-}
-
-/** Resolve an Expr to its current value */
-export function resolveExpr<T>(v: Expr<T>): T {
-  return isExpr(v) ? v.value : v
-}
-
-/** Wrap a plain value as a DynamicExpression */
-export function expr<T>(value: T, fn?: () => T): DynamicExpression<T> {
-  return { value, expr: fn, __: 'e' }
 }

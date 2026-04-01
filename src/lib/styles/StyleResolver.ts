@@ -1,5 +1,5 @@
 import type { CanvasKit, EmbindEnumEntity } from 'canvaskit-wasm'
-import type { ViewStyle, TextStyle, ImageStyle, Color } from './types'
+import type { ViewStyle, TextStyle, ImageStyle, Color, FlexStyle } from './types'
 
 /* ============================================================
  * Resolved primitives — everything pre-computed to CK types
@@ -57,6 +57,9 @@ export interface ResolvedViewStyle {
   clipContent: boolean
   // outline
   outline: { color: Float32Array; width: number; style: string; offset: number } | null
+
+  // display
+  display: boolean
 }
 
 export interface ResolvedTextStyle extends ResolvedViewStyle {
@@ -85,6 +88,69 @@ export interface ResolvedImageStyle extends ResolvedViewStyle {
   hasTint: boolean
   tintColor: Float32Array | null
 }
+
+const LAYOUT_KEYS = new Set<keyof FlexStyle>([
+  // Layout
+  'width',
+  'height',
+  'minWidth',
+  'minHeight',
+  'maxWidth',
+  'maxHeight',
+
+  // Margin
+  'margin',
+  'marginTop',
+  'marginRight',
+  'marginBottom',
+  'marginLeft',
+  'marginStart',
+  'marginEnd',
+  'marginHorizontal',
+  'marginVertical',
+
+  // Padding
+  'padding',
+  'paddingTop',
+  'paddingRight',
+  'paddingBottom',
+  'paddingLeft',
+  'paddingStart',
+  'paddingEnd',
+  'paddingHorizontal',
+  'paddingVertical',
+
+  // Position
+  'position',
+  'top',
+  'right',
+  'bottom',
+  'left',
+  'start',
+  'end',
+
+  // Flexbox
+  'flex',
+  'flexGrow',
+  'flexShrink',
+  'flexBasis',
+  'flexDirection',
+  'flexWrap',
+  'justifyContent',
+  'alignItems',
+  'alignSelf',
+  'alignContent',
+
+  // Gap
+  'gap',
+  'rowGap',
+  'columnGap',
+
+  // Box
+  'boxSizing',
+  'overflow',
+  'display',
+])
 
 /* ============================================================
  * StyleResolver
@@ -224,6 +290,18 @@ export class StyleResolver {
     }
   }
 
+  hasLayoutChanged(prev: FlexStyle, next: FlexStyle): boolean {
+    for (const key of LAYOUT_KEYS) {
+      const pv = prev[key]
+      const nv = next[key]
+
+      if (pv !== nv) {
+        return true
+      }
+    }
+    return false
+  }
+
   // ---- Internal ----
 
   private resolveBase(style: ViewStyle, { w, h }: { w: number; h: number }): ResolvedViewStyle {
@@ -353,6 +431,7 @@ export class StyleResolver {
       blendModeValue,
       clipContent: style.overflow === 'hidden',
       outline,
+      display: style.display !== 'none',
     }
   }
 
