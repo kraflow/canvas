@@ -1,10 +1,10 @@
 import type { Canvas, CanvasKit } from 'canvaskit-wasm'
 import type { ViewStyle } from '@/core/styles'
-import type { Rect, ScrollPosition } from './types'
+import type { Rect, ScrollPosition, ScratchPaints } from './types'
 import type { ViewContext } from './context'
 
 /**
- * Draws a View constraint. Uses an explicitly provided ViewContext
+ * Draws a View constraint. Uses global ScratchPaints
  * to avoid memory leaks while allowing dynamic real-time style updates.
  */
 export function view(
@@ -13,7 +13,8 @@ export function view(
   ctx: ViewContext,
   style: ViewStyle,
   rect: Rect,
-  scrollPosition?: ScrollPosition,
+  scrollPosition: ScrollPosition | undefined,
+  paints: ScratchPaints,
 ) {
   const hasOpacityOrBlend =
     (style.opacity !== undefined && style.opacity < 1) ||
@@ -25,8 +26,7 @@ export function view(
   // 1. Layer, Transforms, and Filters
   if (needsGlobalSave) {
     if (hasOpacityOrBlend || hasFilter) {
-      if (!ctx.layerPaint) ctx.layerPaint = new ck.Paint()
-      ctx.layerPaint.setAlphaf(style.opacity !== undefined ? style.opacity : 1)
+      paints.layer.setAlphaf(style.opacity !== undefined ? style.opacity : 1)
 
       if (hasFilter) {
         let composedFilter: import('canvaskit-wasm').ImageFilter | null = null
@@ -40,18 +40,15 @@ export function view(
           }
           // Note: Add grayscale/brightness/etc. via ColorMatrix here later if required
         })
-        if (composedFilter) ctx.layerPaint.setImageFilter(composedFilter)
+        paints.layer.setImageFilter(composedFilter)
       } else {
-        ctx.layerPaint.setImageFilter(null)
+        paints.layer.setImageFilter(null)
       }
 
-      canvas.saveLayer(ctx.layerPaint)
+      canvas.saveLayer(paints.layer)
     } else {
       canvas.save()
     }
-  } else if (ctx.layerPaint) {
-    ctx.layerPaint.delete()
-    ctx.layerPaint = null
   }
 
   if (hasTransform) {
@@ -69,126 +66,7 @@ export function view(
     canvas.translate(-originX, -originY)
   }
 
-  // 2. Background Paint Management
-  if (style.backgroundColor && style.backgroundColor !== 'transparent') {
-    if (!ctx.bgPaint) {
-      ctx.bgPaint = new ck.Paint()
-      ctx.bgPaint.setStyle(ck.PaintStyle.Fill)
-      ctx.bgPaint.setAntiAlias(true)
-    }
-    const color = ck.parseColorString(style.backgroundColor) || ck.Color4f(0, 0, 0, 0)
-    if (color) ctx.bgPaint.setColor(color)
-  } else if (ctx.bgPaint) {
-    ctx.bgPaint.delete()
-    ctx.bgPaint = null
-  }
-
-  // 3. Border Paint Management
-  if (
-    style.borderWidth &&
-    style.borderColor &&
-    style.borderWidth > 0 &&
-    style.borderColor !== 'transparent'
-  ) {
-    if (!ctx.borderPaint) {
-      ctx.borderPaint = new ck.Paint()
-      ctx.borderPaint.setStyle(ck.PaintStyle.Stroke)
-      ctx.borderPaint.setAntiAlias(true)
-    }
-    ctx.borderPaint.setStrokeWidth(style.borderWidth)
-    const color = ck.parseColorString(style.borderColor) || ck.Color4f(0, 0, 0, 1)
-    if (color) ctx.borderPaint.setColor(color)
-
-    if (style.borderStyle === 'dashed' || style.borderStyle === 'dotted') {
-      const onLen = style.borderStyle === 'dashed' ? style.borderWidth * 3 : style.borderWidth
-      const offLen = style.borderStyle === 'dashed' ? style.borderWidth * 3 : style.borderWidth * 2
-      ctx.borderPaint.setPathEffect(ck.PathEffect.MakeDash([onLen, offLen], 0))
-    } else {
-      ctx.borderPaint.setPathEffect(null)
-    }
-  } else if (ctx.borderPaint) {
-    ctx.borderPaint.delete()
-    ctx.borderPaint = null
-  }
-
-  // 4a. Legacy Shadow Paint Management
-  if (style.shadowColor && style.shadowOpacity && style.shadowOpacity > 0) {
-    if (!ctx.shadowPaint) ctx.shadowPaint = new ck.Paint()
-    const baseCol = ck.parseColorString(style.shadowColor) || ck.Color4f(0, 0, 0, 1)
-    baseCol[3] = style.shadowOpacity
-    const offsetX = style.shadowOffset?.width || 0
-    const offsetY = style.shadowOffset?.height || 0
-    const blurRadius = style.shadowRadius || 0
-    ctx.shadowPaint.setImageFilter(
-      ck.ImageFilter.MakeDropShadow(offsetX, offsetY, blurRadius, blurRadius, baseCol, null),
-    )
-  } else if (ctx.shadowPaint) {
-    ctx.shadowPaint.delete()
-    ctx.shadowPaint = null
-  }
-
-  // 4b. Modern Box Shadow Lists
-  if (Array.isArray(style.boxShadow) && style.boxShadow.length > 0) {
-    if (!ctx.shadowPaints) ctx.shadowPaints = []
-
-    if (ctx.shadowPaints.length > style.boxShadow.length) {
-      const extra = ctx.shadowPaints.splice(style.boxShadow.length)
-      extra.forEach((p) => p.delete())
-    }
-
-    style.boxShadow.forEach((shadowItem, idx) => {
-      let p = ctx.shadowPaints![idx]
-      if (!p) {
-        p = new ck.Paint()
-        p.setStyle(ck.PaintStyle.Fill)
-        p.setAntiAlias(true)
-        ctx.shadowPaints![idx] = p
-      }
-
-      if (typeof shadowItem === 'string') return // Advanced string parsing skipped
-      const parsedColor = ck.parseColorString(shadowItem.color || 'black') || ck.Color4f(0, 0, 0, 1)
-      p.setColor(parsedColor)
-
-      const blurStr = shadowItem.blurRadius || 0
-      const blur = parseFloat(blurStr as string) || 0
-      if (blur > 0) p.setMaskFilter(ck.MaskFilter.MakeBlur(ck.BlurStyle.Normal, blur, true))
-      else p.setMaskFilter(null)
-    })
-  } else if (ctx.shadowPaints) {
-    ctx.shadowPaints.forEach((p) => p.delete())
-    ctx.shadowPaints = []
-  }
-
-  // 5. Outline Paint Management
-  if (
-    style.outlineWidth &&
-    style.outlineColor &&
-    style.outlineWidth > 0 &&
-    style.outlineColor !== 'transparent'
-  ) {
-    if (!ctx.outlinePaint) {
-      ctx.outlinePaint = new ck.Paint()
-      ctx.outlinePaint.setStyle(ck.PaintStyle.Stroke)
-      ctx.outlinePaint.setAntiAlias(true)
-    }
-    ctx.outlinePaint.setStrokeWidth(style.outlineWidth)
-    const color = ck.parseColorString(style.outlineColor) || ck.Color4f(0, 0, 0, 1)
-    if (color) ctx.outlinePaint.setColor(color)
-
-    if (style.outlineStyle === 'dashed' || style.outlineStyle === 'dotted') {
-      const onLen = style.outlineStyle === 'dashed' ? style.outlineWidth * 3 : style.outlineWidth
-      const offLen =
-        style.outlineStyle === 'dashed' ? style.outlineWidth * 3 : style.outlineWidth * 2
-      ctx.outlinePaint.setPathEffect(ck.PathEffect.MakeDash([onLen, offLen], 0))
-    } else {
-      ctx.outlinePaint.setPathEffect(null)
-    }
-  } else if (ctx.outlinePaint) {
-    ctx.outlinePaint.delete()
-    ctx.outlinePaint = null
-  }
-
-  // --- Drawing logic ---
+  // --- Geometry computation ---
   const bounds = ck.LTRBRect(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height)
 
   const tl = style.borderTopLeftRadius ?? style.borderStartStartRadius ?? style.borderRadius ?? 0
@@ -218,24 +96,44 @@ export function view(
     }
   }
 
-  if (ctx.shadowPaint) {
-    if (rrect) canvas.drawRRect(rrect, ctx.shadowPaint)
-    else canvas.drawRect(bounds, ctx.shadowPaint)
+  // --- Shadow Drawing ---
+  if (style.shadowColor && style.shadowOpacity && style.shadowOpacity > 0) {
+    const baseCol = ck.parseColorString(style.shadowColor) || ck.Color4f(0, 0, 0, 1)
+    baseCol[3] = style.shadowOpacity
+    const offsetX = style.shadowOffset?.width || 0
+    const offsetY = style.shadowOffset?.height || 0
+    const blurRadius = style.shadowRadius || 0
+    paints.shadow.setImageFilter(
+      ck.ImageFilter.MakeDropShadow(offsetX, offsetY, blurRadius, blurRadius, baseCol, null),
+    )
+    paints.shadow.setMaskFilter(null) // reset mask filter
+
+    if (rrect) canvas.drawRRect(rrect, paints.shadow)
+    else canvas.drawRect(bounds, paints.shadow)
   }
 
-  if (ctx.shadowPaints && Array.isArray(style.boxShadow)) {
-    ctx.shadowPaints.forEach((p, idx) => {
-      const shadow = style.boxShadow![idx]
-      if (!shadow || typeof shadow === 'string' || shadow.inset) return // Not supported simply atm
+  if (Array.isArray(style.boxShadow) && style.boxShadow.length > 0) {
+    paints.shadow.setImageFilter(null) // reset image filter before using mask filter mapping
+
+    style.boxShadow.forEach((shadowItem) => {
+      if (!shadowItem || typeof shadowItem === 'string' || shadowItem.inset) return
+
+      const parsedColor = ck.parseColorString(shadowItem.color || 'black') || ck.Color4f(0, 0, 0, 1)
+      paints.shadow.setColor(parsedColor)
+
+      const blurStr = shadowItem.blurRadius || 0
+      const blur = parseFloat(blurStr as string) || 0
+      if (blur > 0)
+        paints.shadow.setMaskFilter(ck.MaskFilter.MakeBlur(ck.BlurStyle.Normal, blur, true))
+      else paints.shadow.setMaskFilter(null)
 
       canvas.save()
-      const dx = parseFloat(shadow.offsetX as string) || 0
-      const dy = parseFloat(shadow.offsetY as string) || 0
+      const dx = parseFloat(shadowItem.offsetX as string) || 0
+      const dy = parseFloat(shadowItem.offsetY as string) || 0
       canvas.translate(dx, dy)
 
-      const spread = parseFloat(shadow.spreadDistance as string) || 0
+      const spread = parseFloat(shadowItem.spreadDistance as string) || 0
       if (spread !== 0) {
-        // Highly simplified bound inflation via scaling rather than specific RRect math recalculations
         const cx = rect.x + rect.width / 2
         const cy = rect.y + rect.height / 2
         canvas.translate(cx, cy)
@@ -243,24 +141,64 @@ export function view(
         canvas.translate(-cx, -cy)
       }
 
-      if (rrect) canvas.drawRRect(rrect, p)
-      else canvas.drawRect(bounds, p)
+      if (rrect) canvas.drawRRect(rrect, paints.shadow)
+      else canvas.drawRect(bounds, paints.shadow)
 
       canvas.restore()
     })
   }
 
-  if (ctx.bgPaint) {
-    if (rrect) canvas.drawRRect(rrect, ctx.bgPaint)
-    else canvas.drawRect(bounds, ctx.bgPaint)
-  }
-  if (ctx.borderPaint) {
-    if (rrect) canvas.drawRRect(rrect, ctx.borderPaint)
-    else canvas.drawRect(bounds, ctx.borderPaint)
+  // --- Background Drawing ---
+  if (style.backgroundColor && style.backgroundColor !== 'transparent') {
+    const color = ck.parseColorString(style.backgroundColor) || ck.Color4f(0, 0, 0, 0)
+    paints.fill.setColor(color)
+    if (rrect) canvas.drawRRect(rrect, paints.fill)
+    else canvas.drawRect(bounds, paints.fill)
   }
 
-  // 6. Draw Outlines
-  if (ctx.outlinePaint) {
+  // --- Border Drawing ---
+  if (
+    style.borderWidth &&
+    style.borderColor &&
+    style.borderWidth > 0 &&
+    style.borderColor !== 'transparent'
+  ) {
+    paints.stroke.setStrokeWidth(style.borderWidth)
+    const color = ck.parseColorString(style.borderColor) || ck.Color4f(0, 0, 0, 1)
+    paints.stroke.setColor(color)
+
+    if (style.borderStyle === 'dashed' || style.borderStyle === 'dotted') {
+      const onLen = style.borderStyle === 'dashed' ? style.borderWidth * 3 : style.borderWidth
+      const offLen = style.borderStyle === 'dashed' ? style.borderWidth * 3 : style.borderWidth * 2
+      paints.stroke.setPathEffect(ck.PathEffect.MakeDash([onLen, offLen], 0))
+    } else {
+      paints.stroke.setPathEffect(null)
+    }
+
+    if (rrect) canvas.drawRRect(rrect, paints.stroke)
+    else canvas.drawRect(bounds, paints.stroke)
+  }
+
+  // --- Outline Drawing ---
+  if (
+    style.outlineWidth &&
+    style.outlineColor &&
+    style.outlineWidth > 0 &&
+    style.outlineColor !== 'transparent'
+  ) {
+    paints.stroke.setStrokeWidth(style.outlineWidth)
+    const color = ck.parseColorString(style.outlineColor) || ck.Color4f(0, 0, 0, 1)
+    paints.stroke.setColor(color)
+
+    if (style.outlineStyle === 'dashed' || style.outlineStyle === 'dotted') {
+      const onLen = style.outlineStyle === 'dashed' ? style.outlineWidth * 3 : style.outlineWidth
+      const offLen =
+        style.outlineStyle === 'dashed' ? style.outlineWidth * 3 : style.outlineWidth * 2
+      paints.stroke.setPathEffect(ck.PathEffect.MakeDash([onLen, offLen], 0))
+    } else {
+      paints.stroke.setPathEffect(null)
+    }
+
     const offset = style.outlineOffset || 0
     const ow = style.outlineWidth || 0
     const expand = offset + ow / 2 // Stroke draws centered, so we push it out
@@ -270,10 +208,10 @@ export function view(
       rect.x + rect.width + expand,
       rect.y + rect.height + expand,
     )
-    canvas.drawRect(outBounds, ctx.outlinePaint)
+    canvas.drawRect(outBounds, paints.stroke)
   }
 
-  // 7. Clip boundaries
+  // --- Clip boundaries ---
   const isScrollOrHidden = style.overflow === 'scroll' || style.overflow === 'hidden'
   if (isScrollOrHidden) {
     canvas.save()
@@ -294,7 +232,8 @@ export function restoreView(canvas: Canvas, style: ViewStyle) {
     (style.opacity !== undefined && style.opacity < 1) ||
     (style.mixBlendMode && style.mixBlendMode !== 'normal')
   const hasTransform = Array.isArray(style.transform) && style.transform.length > 0
-  if (hasOpacityOrBlend || hasTransform) {
+  const hasFilter = Array.isArray(style.filter) && style.filter.length > 0
+  if (hasOpacityOrBlend || hasTransform || hasFilter) {
     canvas.restore()
   }
 }

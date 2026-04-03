@@ -1,6 +1,6 @@
 import type { Canvas, CanvasKit, Image as CKImage } from 'canvaskit-wasm'
 import type { ImageStyle } from '@/core/styles'
-import type { Rect } from './types'
+import type { Rect, ScratchPaints } from './types'
 import type { ImageContext } from './context'
 
 // Global cache for unique images to prevent loading same assets exponentially via refs
@@ -37,22 +37,19 @@ export function image(
   style: ImageStyle,
   src: string,
   rect: Rect,
+  paints: ScratchPaints,
 ) {
-  // Handle Style Paint mapped directly into Context
-  if (style.opacity !== undefined || style.tintColor) {
-    if (!ctx.cachedStylePaint) {
-      ctx.cachedStylePaint = new ck.Paint()
-      ctx.cachedStylePaint.setAntiAlias(true)
+  // Setup image paint
+  paints.image.setAlphaf(style.opacity !== undefined ? style.opacity : 1)
+  if (style.tintColor) {
+    const tint = ck.parseColorString(style.tintColor)
+    if (tint) {
+      paints.image.setColorFilter(ck.ColorFilter.MakeBlend(tint, ck.BlendMode.SrcIn))
+    } else {
+      paints.image.setColorFilter(null)
     }
-    if (style.opacity !== undefined) ctx.cachedStylePaint.setAlphaf(style.opacity)
-    if (style.tintColor) {
-      const tint = ck.parseColorString(style.tintColor)
-      if (tint)
-        ctx.cachedStylePaint.setColorFilter(ck.ColorFilter.MakeBlend(tint, ck.BlendMode.SrcIn))
-    }
-  } else if (ctx.cachedStylePaint) {
-    ctx.cachedStylePaint.delete()
-    ctx.cachedStylePaint = null
+  } else {
+    paints.image.setColorFilter(null)
   }
 
   // Handle src changes
@@ -75,12 +72,10 @@ export function image(
   // Preview / Loader placeholders
   if (ctx.isLoading || !ctx.image) {
     if (style.backgroundColor && style.backgroundColor !== 'transparent') {
-      // Temporary paint is fine here since it only runs during single-fire network conditions
-      const fillPaint = new ck.Paint()
-      fillPaint.setColor(ck.parseColorString(style.backgroundColor) || ck.Color4f(0, 0, 0, 0))
+      const color = ck.parseColorString(style.backgroundColor) || ck.Color4f(0, 0, 0, 0)
+      paints.fill.setColor(color)
       const bounds = ck.LTRBRect(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height)
-      canvas.drawRect(bounds, fillPaint)
-      fillPaint.delete()
+      canvas.drawRect(bounds, paints.fill)
     }
     return
   }
@@ -120,14 +115,13 @@ export function image(
       // Repeat would need a shader or repeated draw calls, fallback to stretch/fill for now
     }
 
-    canvas.drawImageRect(ctx.image, srcRect, destRect, ctx.cachedStylePaint!, false)
+    canvas.drawImageRect(ctx.image, srcRect, destRect, paints.image, false)
 
     if (style.overlayColor) {
-      const overlayPaint = new ck.Paint()
-      overlayPaint.setColor(ck.parseColorString(style.overlayColor) || ck.Color4f(0, 0, 0, 0))
+      const color = ck.parseColorString(style.overlayColor) || ck.Color4f(0, 0, 0, 0)
+      paints.fill.setColor(color)
       // Draw over the same dest bounds to cover just the image area
-      canvas.drawRect(destRect, overlayPaint)
-      overlayPaint.delete()
+      canvas.drawRect(destRect, paints.fill)
     }
   }
 }
