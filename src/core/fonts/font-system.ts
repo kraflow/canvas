@@ -53,10 +53,12 @@ export async function createFontSystem(ck: CanvasKit, manifest: FontManifest): P
 
   // 2. Build initial FontMgr
   let fontMgr = buildFontMgr(ck, store, store.allKeys())
+  let isDisposed = false
 
   // ── internal helpers ──
 
   function rebuildFontMgr(): FontMgr {
+    if (isDisposed) return fontMgr
     const newMgr = buildFontMgr(ck, store, store.allKeys())
     if (fontMgr) fontMgr.delete()
     fontMgr = newMgr
@@ -112,13 +114,17 @@ export async function createFontSystem(ck: CanvasKit, manifest: FontManifest): P
     opts: ParagraphOptions,
     maxWidth: number,
   ) {
+    if (isDisposed) throw new Error('FontSystem is disposed')
     const weight = opts.fontWeight ?? opts.fontStyle?.weight ?? 400
-    const mgr = await prepareForText(text, primaryFamily, weight)
+    await prepareForText(text, primaryFamily, weight)
+    if (isDisposed) throw new Error('FontSystem is disposed')
     const segments = segmentText(text, manifest.families, primaryFamily)
-    return buildParagraph(ck, mgr, segments, opts, maxWidth)
+    return buildParagraph(ck, fontMgr, segments, opts, maxWidth)
   }
 
   function dispose() {
+    if (isDisposed) return
+    isDisposed = true
     if (fontMgr) fontMgr.delete()
     registry.dispose()
     pictures.dispose()

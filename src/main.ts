@@ -1,5 +1,5 @@
 import { createApp } from 'vue'
-import PlaygroundView from './playground/PlaygroundView.vue'
+import App from './App.vue'
 
-const app = createApp(PlaygroundView)
+const app = createApp(App)
 app.mount('#app')

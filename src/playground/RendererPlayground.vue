@@ -13,10 +13,8 @@ let subtitle: Paragraph | null = null
 onMounted(async () => {
   if (!canvasRef.value) return
 
-  // 1. Initialize CanvasKit
   const ck = await loadCanvasKit()
 
-  // 2. Initialize Fonts
   const manifest = createFontManifest({
     families: {
       Inter: {
@@ -39,8 +37,6 @@ onMounted(async () => {
   })
   fonts = await createFontSystem(ck, manifest)
 
-  // 3. Prepare Text (Cached)
-  // Float32Array expectation in our paragraph builder (0-1 range)
   const textColor = new Float32Array([1, 1, 1, 1])
   const subtitleColor = new Float32Array([0.7, 0.7, 0.8, 1])
 
@@ -67,20 +63,17 @@ onMounted(async () => {
     800,
   )
 
-  // 4. Initialize Renderer
   renderer = createRenderer({
     canvasElement: canvasRef.value,
     pixelRatio: window.devicePixelRatio,
     onDraw: (canvas, ck) => {
       const time = performance.now() * 0.001
 
-      canvas.clear(ck.Color(12, 12, 14, 255)) // Deep dark background
+      canvas.clear(ck.Color(12, 12, 14, 255))
 
-      // Draw floating gradient orbs
       const paint = new ck.Paint()
       paint.setAntiAlias(true)
 
-      // Orb 1
       paint.setColor(ck.Color(100 + Math.sin(time) * 100, 50, 255, 127))
       canvas.drawCircle(
         400 + Math.cos(time * 0.8) * 100,
@@ -89,7 +82,6 @@ onMounted(async () => {
         paint,
       )
 
-      // Orb 2
       paint.setColor(ck.Color(50, 200 + Math.cos(time) * 55, 150, 76))
       canvas.drawCircle(
         800 + Math.sin(time * 0.5) * 150,
@@ -100,22 +92,15 @@ onMounted(async () => {
 
       paint.delete()
 
-      // Draw Typography
-      if (cachedParagraph) {
-        canvas.drawParagraph(cachedParagraph, 100, 200)
-      }
-      if (subtitle) {
-        canvas.drawParagraph(subtitle, 104, 290)
-      }
+      if (cachedParagraph) canvas.drawParagraph(cachedParagraph, 100, 200)
+      if (subtitle) canvas.drawParagraph(subtitle, 104, 290)
     },
   })
 
   await renderer.init()
   renderer.setAnimating(true)
 
-  // 5. Handle Resize gracefully
   window.addEventListener('resize', handleResize)
-  // Initial size burst trick to catch container bounds correctly on mount
   handleResize()
 })
 
@@ -138,119 +123,18 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="app-container">
-    <!-- Premium Navbar -->
-    <nav class="navbar">
-      <div class="logo">
-        <span class="logo-icon"></span>
-        <span class="logo-text">Kraflow Playground</span>
-      </div>
-      <div class="nav-links">
-        <button class="action-btn">Deploy</button>
-      </div>
-    </nav>
-
-    <!-- Main Canvas Area -->
-    <main class="canvas-container">
-      <canvas ref="canvasRef"></canvas>
-    </main>
+  <div class="canvas-container">
+    <canvas ref="canvasRef"></canvas>
   </div>
 </template>
 
 <style scoped>
-/* Base Layout */
-.app-container {
-  width: 100vw;
-  height: 100vh;
-  display: flex;
-  flex-direction: column;
-  background-color: #0c0c0e;
-  color: #fff;
-  font-family:
-    'Inter',
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    Roboto,
-    Helvetica,
-    Arial,
-    sans-serif;
-  overflow: hidden;
-}
-
-/* Navbar Glassmorphism */
-.navbar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 64px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 32px;
-  background: rgba(18, 18, 20, 0.6);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  z-index: 100;
-}
-
-/* Brand/Logo Styling */
-.logo {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.logo-icon {
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-  box-shadow: 0 0 16px rgba(79, 172, 254, 0.4);
-}
-
-.logo-text {
-  font-size: 1.1rem;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  background: linear-gradient(to right, #fff, #a1a1aa);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-}
-
-/* Navbar Action */
-.action-btn {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  color: #fff;
-  padding: 8px 16px;
-  border-radius: 8px;
-  font-size: 0.9rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.action-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.2);
-  transform: translateY(-1px);
-}
-
-/* Canvas Layout */
 .canvas-container {
-  flex: 1;
   width: 100%;
   height: 100%;
   position: relative;
-  /* Navbar pushed content downwards */
-  margin-top: 64px;
   background: #0c0c0e;
 }
-
 canvas {
   display: block;
   width: 100%;
