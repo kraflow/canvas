@@ -1,6 +1,6 @@
 # render usage
 
-The core module for bootstrapping the WebGL CanvasKit surface and driving the central animation loop. 
+The core module for bootstrapping the WebGL CanvasKit surface and driving the central animation loop.
 
 ---
 
@@ -21,7 +21,7 @@ const renderer = createRenderer({
     paint.setStyle(ck.PaintStyle.Fill)
     canvas.drawRect(ck.LTRBRect(10, 10, 100, 100), paint)
     paint.delete()
-  }
+  },
 })
 
 // Loads CanvasKit and wires up the WebGL surface
@@ -36,7 +36,7 @@ Once the renderer is initialized, it won't continuously re-draw unless you activ
 
 ### manual drawing
 
-For static canvases or one-off changes, you can just manually trigger a draw. 
+For static canvases or one-off changes, you can just manually trigger a draw.
 
 ```ts
 // Automatically invokes the onDraw function provided during createdRenderer
@@ -81,7 +81,7 @@ window.addEventListener('resize', () => {
 renderer.setPixelRatio(window.devicePixelRatio)
 ```
 
-*(Note: Both of these operations are highly optimized but do result in tearing down the active `Surface` and constructing a new one. The `Renderer` abstracts this memory lifecycle for you).* 
+_(Note: Both of these operations are highly optimized but do result in tearing down the active `Surface` and constructing a new one. The `Renderer` abstracts this memory lifecycle for you)._
 
 ---
 
@@ -97,7 +97,7 @@ renderer.dispose()
 
 ## module map
 
-| file          | exports                                          | purpose                        |
-| ------------- | ------------------------------------------------ | ------------------------------ |
-| `load.ts`     | `loadCanvasKit`                                  | CanvasKit CDN / Local Fetcher  |
-| `renderer.ts` | `createRenderer`, `Renderer`, `RendererOptions`  | WebGL surface orchestration    |
+| file          | exports                                         | purpose                       |
+| ------------- | ----------------------------------------------- | ----------------------------- |
+| `load.ts`     | `loadCanvasKit`                                 | CanvasKit CDN / Local Fetcher |
+| `renderer.ts` | `createRenderer`, `Renderer`, `RendererOptions` | WebGL surface orchestration   |

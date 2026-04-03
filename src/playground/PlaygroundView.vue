@@ -22,11 +22,17 @@ onMounted(async () => {
       Inter: {
         weights: [400, 700],
         variants: {
-          '400': { url: 'https://cdn.jsdelivr.net/fontsource/fonts/inter@latest/latin-400-normal.woff2', priority: 'eager' },
-          '700': { url: 'https://cdn.jsdelivr.net/fontsource/fonts/inter@latest/latin-700-normal.woff2', priority: 'lazy' },
+          '400': {
+            url: 'https://cdn.jsdelivr.net/fontsource/fonts/inter@latest/latin-400-normal.woff2',
+            priority: 'eager',
+          },
+          '700': {
+            url: 'https://cdn.jsdelivr.net/fontsource/fonts/inter@latest/latin-700-normal.woff2',
+            priority: 'lazy',
+          },
         },
         unicodeRanges: ['U+0000-00FF'],
-      }
+      },
     },
     fallbackChain: ['Inter'],
     eagerLoad: ['Inter'],
@@ -39,26 +45,26 @@ onMounted(async () => {
   const subtitleColor = new Float32Array([0.7, 0.7, 0.8, 1])
 
   cachedParagraph = await fonts.makeParagraph(
-    "Kraflow Canvas Engine",
-    "Inter", 
-    { 
-      fontSize: 64, 
+    'Kraflow Canvas Engine',
+    'Inter',
+    {
+      fontSize: 64,
       color: textColor,
       fontWeight: 700,
-      letterSpacing: -1
-    }, 
-    1000
+      letterSpacing: -1,
+    },
+    1000,
   )
 
   subtitle = await fonts.makeParagraph(
-    "High-performance WebGL rendering. Real-time dynamic typography.",
-    "Inter",
+    'High-performance WebGL rendering. Real-time dynamic typography.',
+    'Inter',
     {
       fontSize: 24,
       color: subtitleColor,
-      fontWeight: 400
+      fontWeight: 400,
     },
-    800
+    800,
   )
 
   // 4. Initialize Renderer
@@ -67,20 +73,30 @@ onMounted(async () => {
     pixelRatio: window.devicePixelRatio,
     onDraw: (canvas, ck) => {
       const time = performance.now() * 0.001
-      
+
       canvas.clear(ck.Color(12, 12, 14, 255)) // Deep dark background
 
       // Draw floating gradient orbs
       const paint = new ck.Paint()
       paint.setAntiAlias(true)
-      
+
       // Orb 1
       paint.setColor(ck.Color(100 + Math.sin(time) * 100, 50, 255, 127))
-      canvas.drawCircle(400 + Math.cos(time * 0.8) * 100, 400 + Math.sin(time * 1.2) * 50, 300, paint)
-      
+      canvas.drawCircle(
+        400 + Math.cos(time * 0.8) * 100,
+        400 + Math.sin(time * 1.2) * 50,
+        300,
+        paint,
+      )
+
       // Orb 2
       paint.setColor(ck.Color(50, 200 + Math.cos(time) * 55, 150, 76))
-      canvas.drawCircle(800 + Math.sin(time * 0.5) * 150, 300 + Math.cos(time * 0.9) * 100, 350, paint)
+      canvas.drawCircle(
+        800 + Math.sin(time * 0.5) * 150,
+        300 + Math.cos(time * 0.9) * 100,
+        350,
+        paint,
+      )
 
       paint.delete()
 
@@ -91,7 +107,7 @@ onMounted(async () => {
       if (subtitle) {
         canvas.drawParagraph(subtitle, 104, 290)
       }
-    }
+    },
   })
 
   await renderer.init()
@@ -150,7 +166,15 @@ onBeforeUnmount(() => {
   flex-direction: column;
   background-color: #0c0c0e;
   color: #fff;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
   overflow: hidden;
 }
 

@@ -21,7 +21,7 @@ export function createRenderer(options: RendererOptions): Renderer {
   let ck: CanvasKit | null = null
   let surface: Surface | null = null
   let rafId: number | null = null
-  
+
   let pixelRatio = options.pixelRatio ?? window.devicePixelRatio ?? 1
   let onDraw = options.onDraw
   let isAnimating = false
@@ -48,21 +48,27 @@ export function createRenderer(options: RendererOptions): Renderer {
     options.canvasElement.style.width = `${width}px`
     options.canvasElement.style.height = `${height}px`
 
-    surface = ck.MakeWebGLCanvasSurface(options.canvasElement as unknown as string | HTMLCanvasElement, ck.ColorSpace.SRGB, {
-      alpha: 1,
-      antialias: 1,
-      depth: 1,
-      failIfMajorPerformanceCaveat: 0,
-      majorVersion: 2,
-      minorVersion: 0,
-      premultipliedAlpha: 1,
-      preserveDrawingBuffer: 0,
-      stencil: 8
-    })
-    
+    surface = ck.MakeWebGLCanvasSurface(
+      options.canvasElement as unknown as string | HTMLCanvasElement,
+      ck.ColorSpace.SRGB,
+      {
+        alpha: 1,
+        antialias: 1,
+        depth: 1,
+        failIfMajorPerformanceCaveat: 0,
+        majorVersion: 2,
+        minorVersion: 0,
+        premultipliedAlpha: 1,
+        preserveDrawingBuffer: 0,
+        stencil: 8,
+      },
+    )
+
     if (!surface) {
       // Fallback if the webgl options failed
-      surface = ck.MakeWebGLCanvasSurface(options.canvasElement as unknown as string | HTMLCanvasElement)
+      surface = ck.MakeWebGLCanvasSurface(
+        options.canvasElement as unknown as string | HTMLCanvasElement,
+      )
     }
 
     if (!surface) {
@@ -124,12 +130,12 @@ export function createRenderer(options: RendererOptions): Renderer {
 
     // clear and run user draw code
     canvas.clear(ck.TRANSPARENT)
-    
+
     canvas.save()
     canvas.scale(pixelRatio, pixelRatio)
-    
+
     onDraw(canvas, ck)
-    
+
     canvas.restore()
     surface.flush()
   }
@@ -151,6 +157,6 @@ export function createRenderer(options: RendererOptions): Renderer {
     setDrawFunction,
     setAnimating,
     draw,
-    dispose
+    dispose,
   }
 }

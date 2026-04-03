@@ -44,7 +44,8 @@ export function createFontLoader(store: FontStore, maxConcurrent = 3): FontLoade
   }
 
   function load(key: string, url: string): Promise<ArrayBuffer> {
-    if (failed.has(key)) return Promise.reject(new Error(`[font-loader] Previously failed to load ${key}`))
+    if (failed.has(key))
+      return Promise.reject(new Error(`[font-loader] Previously failed to load ${key}`))
 
     const cached = store.get(key)
     if (cached) return Promise.resolve(cached)
