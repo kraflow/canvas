@@ -85,15 +85,49 @@ export function image(
     return
   }
 
-  // Native Image layout scaling bindings mapped directly
+  // Native Image layout scaling bindings
   if (ctx.image) {
-    const destRect = ck.LTRBRect(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height)
-    canvas.drawImageRect(
-      ctx.image,
-      ck.LTRBRect(0, 0, ctx.image.width(), ctx.image.height()),
-      destRect,
-      ctx.cachedStylePaint!,
-      false,
-    )
+    const imgW = ctx.image.width()
+    const imgH = ctx.image.height()
+    const destW = rect.width
+    const destH = rect.height
+
+    let srcRect = ck.LTRBRect(0, 0, imgW, imgH)
+    let destRect = ck.LTRBRect(rect.x, rect.y, rect.x + destW, rect.y + destH)
+
+    const mode = style.objectFit || style.resizeMode || 'cover'
+
+    if (mode === 'contain' || mode === 'scale-down') {
+      let scale = Math.min(destW / imgW, destH / imgH)
+      if (mode === 'scale-down' && scale > 1) scale = 1 // Don't scale up
+      const w = imgW * scale
+      const h = imgH * scale
+      const cx = rect.x + (destW - w) / 2
+      const cy = rect.y + (destH - h) / 2
+      destRect = ck.LTRBRect(cx, cy, cx + w, cy + h)
+    } else if (mode === 'cover') {
+      const scale = Math.max(destW / imgW, destH / imgH)
+      const w = destW / scale
+      const h = destH / scale
+      const cx = (imgW - w) / 2
+      const cy = (imgH - h) / 2
+      srcRect = ck.LTRBRect(cx, cy, cx + w, cy + h)
+    } else if (mode === 'center') {
+      const cx = rect.x + (destW - imgW) / 2
+      const cy = rect.y + (destH - imgH) / 2
+      destRect = ck.LTRBRect(cx, cy, cx + imgW, cy + imgH)
+    } else if (mode === 'repeat') {
+      // Repeat would need a shader or repeated draw calls, fallback to stretch/fill for now
+    }
+
+    canvas.drawImageRect(ctx.image, srcRect, destRect, ctx.cachedStylePaint!, false)
+
+    if (style.overlayColor) {
+      const overlayPaint = new ck.Paint()
+      overlayPaint.setColor(ck.parseColorString(style.overlayColor) || ck.Color4f(0, 0, 0, 0))
+      // Draw over the same dest bounds to cover just the image area
+      canvas.drawRect(destRect, overlayPaint)
+      overlayPaint.delete()
+    }
   }
 }

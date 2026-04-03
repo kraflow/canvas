@@ -11,7 +11,7 @@ import {
   type ImageContext,
   type DrawContext,
 } from '../draw/context'
-import { view, text, image } from '../draw'
+import { view, restoreView, text, image } from '../draw'
 import type { Rect, ScrollPosition } from '../draw/types'
 import type { ViewStyle, TextStyle, ImageStyle } from '../styles'
 import type { FontSystem } from '../fonts'
@@ -96,7 +96,13 @@ export function createRenderer(options: RendererOptions): Renderer {
     return (fonts: FontSystem, style: TextStyle, content: string, rect: Rect) => {
       const canvas = surface?.getCanvas()
       if (!ck || !canvas || !node.ctx) return
+
+      // Implicit View wrapper (Draw Chaining)
+      view(ck, canvas, node.ctx as ViewContext, style, rect)
+
       text(ck, canvas, node.ctx as TextContext, fonts, style, content, rect)
+
+      restoreView(canvas, style)
     }
   }
 
@@ -106,7 +112,13 @@ export function createRenderer(options: RendererOptions): Renderer {
     return (style: ImageStyle, src: string, rect: Rect) => {
       const canvas = surface?.getCanvas()
       if (!ck || !canvas || !node.ctx) return
+
+      // Implicit View wrapper (Draw Chaining)
+      view(ck, canvas, node.ctx as ViewContext, style, rect)
+
       image(ck, canvas, node.ctx as ImageContext, style, src, rect)
+
+      restoreView(canvas, style)
     }
   }
 

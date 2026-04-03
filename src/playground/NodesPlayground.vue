@@ -30,6 +30,13 @@ const tStyle: TextStyle = {
   fontSize: 32,
   color: '#FFFFFF',
   fontWeight: 'bold',
+  backgroundColor: '#FF3366',
+  borderRadius: 12,
+  borderWidth: 2,
+  borderColor: '#FFFFFF',
+  shadowColor: '#FF3366',
+  shadowOpacity: 0.8,
+  shadowRadius: 15,
 }
 
 const subtitleStyle: TextStyle = {

@@ -28,16 +28,74 @@ export function text(
     ctx.paragraph = null
     ctx.isBuilding = true
 
+    let textAlignValue = ck.TextAlign.Left.value
+    if (style.textAlign === 'center') textAlignValue = ck.TextAlign.Center.value
+    else if (style.textAlign === 'right') textAlignValue = ck.TextAlign.Right.value
+    else if (style.textAlign === 'justify') textAlignValue = ck.TextAlign.Justify.value
+
+    let decoration = ck.NoDecoration
+    if (style.textDecorationLine) {
+      if (style.textDecorationLine.includes('underline')) decoration |= ck.UnderlineDecoration
+      if (style.textDecorationLine.includes('line-through')) decoration |= ck.LineThroughDecoration
+    }
+
+    let decorationStyle = ck.DecorationStyle.Solid
+    if (style.textDecorationStyle === 'double') decorationStyle = ck.DecorationStyle.Double
+    else if (style.textDecorationStyle === 'dotted') decorationStyle = ck.DecorationStyle.Dotted
+    else if (style.textDecorationStyle === 'dashed') decorationStyle = ck.DecorationStyle.Dashed
+
+    let textShadow = null
+    if (style.textShadowColor) {
+      const parsedColor = ck.parseColorString(style.textShadowColor)
+      if (parsedColor) {
+        textShadow = {
+          color: parsedColor,
+          offsetX: style.textShadowOffset?.width || 0,
+          offsetY: style.textShadowOffset?.height || 0,
+          blurRadius: style.textShadowRadius || 0,
+        }
+      }
+    }
+
+    let fontFeatures: { name: string; value: number }[] | undefined = undefined
+    if (style.fontVariant && style.fontVariant.length > 0) {
+      fontFeatures = []
+      for (const variant of style.fontVariant) {
+        if (variant === 'small-caps') fontFeatures.push({ name: 'smcp', value: 1 })
+        else if (variant === 'oldstyle-nums') fontFeatures.push({ name: 'onum', value: 1 })
+        else if (variant === 'lining-nums') fontFeatures.push({ name: 'lnum', value: 1 })
+        else if (variant === 'tabular-nums') fontFeatures.push({ name: 'tnum', value: 1 })
+        else if (variant === 'proportional-nums') fontFeatures.push({ name: 'pnum', value: 1 })
+      }
+    }
+
     fontSystem
       .makeParagraph(
         content,
         style.fontFamily || 'Inter',
         {
           fontSize: style.fontSize,
-          color: style.color ? ck.parseColorString(style.color) : undefined,
+          color: style.color ? ck.parseColorString(style.color) || undefined : undefined,
           fontWeight: style.fontWeight === 'bold' ? 700 : Number(style.fontWeight) || 400,
           letterSpacing: style.letterSpacing,
           lineHeight: style.lineHeight,
+          italic: style.fontStyle === 'italic',
+          textAlignValue,
+          textDirectionRTL: style.writingDirection === 'rtl',
+          textAlignVertical: (style.textAlignVertical as 'top' | 'center' | 'bottom') || 'top',
+          textTransform: style.textTransform as
+            | 'none'
+            | 'uppercase'
+            | 'lowercase'
+            | 'capitalize'
+            | undefined,
+          decoration,
+          decorationStyle,
+          decorationColor: style.textDecorationColor
+            ? ck.parseColorString(style.textDecorationColor) || undefined
+            : undefined,
+          textShadow,
+          fontFeatures,
         },
         rect.width || 1000,
       )
