@@ -5,6 +5,7 @@ import type {
   FontStyle,
   Paragraph,
   ParagraphStyle,
+  TextStyle,
 } from 'canvaskit-wasm'
 import type { TextSegment } from './text-segmenter'
 
@@ -112,6 +113,7 @@ export function buildParagraph(
       heightMultiplier: o.heightMultiplier,
       fontStyle: {
         weight: { value: o.fontWeight },
+        width: ck.FontWidth ? ck.FontWidth.Normal : { value: 5 },
         slant: o.italic ? ck.FontSlant.Italic : ck.FontSlant.Upright,
       },
       decoration: o.decoration,
@@ -134,7 +136,7 @@ export function buildParagraph(
   const builder = ck.ParagraphBuilder.Make(paraStyle, fontMgr)
 
   for (const seg of segments) {
-    const ts = new ck.TextStyle({})
+    const ts = new ck.TextStyle({}) as TextStyle
 
     // every property set per-segment so each run is fully self-contained
     ts.color = o.color
@@ -142,8 +144,9 @@ export function buildParagraph(
     ts.fontFamilies = [seg.family, ...o.fontFamilies] // segment family first, then fallbacks
     ts.letterSpacing = o.letterSpacing
     ts.heightMultiplier = o.heightMultiplier
-    ts.fontStyle = (o.fontStyle ?? {
+    ts.fontStyle = (o.fontStyle || {
       weight: { value: o.fontWeight },
+      width: ck.FontWidth ? ck.FontWidth.Normal : { value: 5 },
       slant: o.italic ? ck.FontSlant.Italic : ck.FontSlant.Upright,
     }) as FontStyle
     ts.decoration = o.decoration

@@ -1,2 +1,2 @@
-export { createFontSystem } from './font-system'
-export { createFontManifest } from './font-manifest'
+export { createFontSystem, type FontSystem } from './font-system'
+export { createFontManifest, type FontManifest } from './font-manifest'
