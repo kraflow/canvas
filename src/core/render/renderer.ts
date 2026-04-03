@@ -1,11 +1,30 @@
 import { type CanvasKit, type Surface, type Canvas as CKCanvas } from 'canvaskit-wasm'
 import { loadCanvasKit } from './load'
 
+import {
+  createViewContext,
+  createTextContext,
+  createImageContext,
+  destroyContext,
+  type ViewContext,
+  type TextContext,
+  type ImageContext,
+  type DrawContext,
+} from '../draw/context'
+import { view, text, image } from '../draw'
+import type { Rect, ScrollPosition } from '../draw/types'
+import type { ViewStyle, TextStyle, ImageStyle } from '../styles'
+import type { FontSystem } from '../fonts'
+
 export interface RendererOptions {
   canvasElement: HTMLCanvasElement
   pixelRatio?: number
   onDraw?: (canvas: CKCanvas, ck: CanvasKit) => void
 }
+
+export type ViewNodeFn = (style: ViewStyle, rect: Rect, scrollPosition?: ScrollPosition) => void
+export type TextNodeFn = (fonts: FontSystem, style: TextStyle, content: string, rect: Rect) => void
+export type ImageNodeFn = (style: ImageStyle, src: string, rect: Rect) => void
 
 export interface Renderer {
   init(): Promise<void>
@@ -15,6 +34,16 @@ export interface Renderer {
   setAnimating(isAnimating: boolean): void
   draw(): void
   dispose(): void
+
+  // Node wrapper factories
+  createViewNode(): ViewNodeFn
+  createTextNode(): TextNodeFn
+  createImageNode(): ImageNodeFn
+}
+
+type RegisteredNode = {
+  type: 'view' | 'text' | 'image'
+  ctx: DrawContext | null
 }
 
 export function createRenderer(options: RendererOptions): Renderer {
@@ -25,8 +54,61 @@ export function createRenderer(options: RendererOptions): Renderer {
   let pixelRatio = options.pixelRatio ?? window.devicePixelRatio ?? 1
   let onDraw = options.onDraw
   let isAnimating = false
+  let createdContextsForAnimation = false
   let width = options.canvasElement.clientWidth
   let height = options.canvasElement.clientHeight
+
+  const registeredNodes: RegisteredNode[] = []
+
+  // Internal Context Lifecycle
+  function createAllContexts() {
+    for (const node of registeredNodes) {
+      if (node.ctx) continue // already created
+      if (node.type === 'view') node.ctx = createViewContext()
+      else if (node.type === 'text') node.ctx = createTextContext()
+      else if (node.type === 'image') node.ctx = createImageContext()
+    }
+  }
+
+  function destroyAllContexts() {
+    for (const node of registeredNodes) {
+      if (node.ctx) {
+        destroyContext(node.ctx)
+        node.ctx = null
+      }
+    }
+  }
+
+  // Wrapper Factories
+  function createViewNode(): ViewNodeFn {
+    const node: RegisteredNode = { type: 'view', ctx: null }
+    registeredNodes.push(node)
+    return (style: ViewStyle, rect: Rect, scrollPosition?: ScrollPosition) => {
+      const canvas = surface?.getCanvas()
+      if (!ck || !canvas || !node.ctx) return
+      view(ck, canvas, node.ctx as ViewContext, style, rect, scrollPosition)
+    }
+  }
+
+  function createTextNode(): TextNodeFn {
+    const node: RegisteredNode = { type: 'text', ctx: null }
+    registeredNodes.push(node)
+    return (fonts: FontSystem, style: TextStyle, content: string, rect: Rect) => {
+      const canvas = surface?.getCanvas()
+      if (!ck || !canvas || !node.ctx) return
+      text(ck, canvas, node.ctx as TextContext, fonts, style, content, rect)
+    }
+  }
+
+  function createImageNode(): ImageNodeFn {
+    const node: RegisteredNode = { type: 'image', ctx: null }
+    registeredNodes.push(node)
+    return (style: ImageStyle, src: string, rect: Rect) => {
+      const canvas = surface?.getCanvas()
+      if (!ck || !canvas || !node.ctx) return
+      image(ck, canvas, node.ctx as ImageContext, style, src, rect)
+    }
+  }
 
   async function init() {
     ck = await loadCanvasKit()
@@ -111,6 +193,8 @@ export function createRenderer(options: RendererOptions): Renderer {
     if (isAnimating === animating) return
     isAnimating = animating
     if (isAnimating) {
+      createAllContexts()
+      createdContextsForAnimation = true
       if (rafId === null) {
         rafId = requestAnimationFrame(frame)
       }
@@ -119,6 +203,8 @@ export function createRenderer(options: RendererOptions): Renderer {
         cancelAnimationFrame(rafId)
         rafId = null
       }
+      destroyAllContexts()
+      createdContextsForAnimation = false
     }
   }
 
@@ -127,6 +213,11 @@ export function createRenderer(options: RendererOptions): Renderer {
 
     const canvas = surface.getCanvas()
     if (!canvas) return
+
+    const isSingleDraw = !isAnimating && !createdContextsForAnimation
+    if (isSingleDraw) {
+      createAllContexts()
+    }
 
     // clear and run user draw code
     canvas.clear(ck.TRANSPARENT)
@@ -138,10 +229,15 @@ export function createRenderer(options: RendererOptions): Renderer {
 
     canvas.restore()
     surface.flush()
+
+    if (isSingleDraw) {
+      destroyAllContexts()
+    }
   }
 
   function dispose() {
     setAnimating(false)
+    destroyAllContexts()
     if (surface) {
       surface.delete()
       surface = null
@@ -158,5 +254,8 @@ export function createRenderer(options: RendererOptions): Renderer {
     setAnimating,
     draw,
     dispose,
+    createViewNode,
+    createTextNode,
+    createImageNode,
   }
 }

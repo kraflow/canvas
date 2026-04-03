@@ -1,41 +1,33 @@
-import type { Canvas, CanvasKit, Paragraph } from 'canvaskit-wasm'
+import type { Canvas, CanvasKit } from 'canvaskit-wasm'
 import type { TextStyle } from '@/core/styles'
 import type { FontSystem } from '@/core/fonts'
 import type { Rect } from './types'
-
-interface CompiledText {
-  content: string
-  paragraph: Paragraph | null
-  isBuilding: boolean
-}
-
-const compileCache = new WeakMap<TextStyle, CompiledText>()
+import type { TextContext } from './context'
 
 export function text(
   ck: CanvasKit,
   canvas: Canvas,
+  ctx: TextContext,
   fontSystem: FontSystem,
   style: TextStyle,
   content: string,
   rect: Rect,
 ) {
-  let compiled = compileCache.get(style)
+  // If content or style boundary changes drastically, we rebuild paragraph.
+  // Weak comparisons on content for now. A deep style equality check could be
+  // added here to fully prevent rebuilds, but `fontSystem.makeParagraph` is incredibly fast
+  // if the font is loaded, though it does remake C++ structural allocations.
+  // For strict 60FPS animation of purely layout styles, we'd need more complex tracking.
 
-  // First frame encounter or updated string input => Cache Miss.
-  if (!compiled || compiled.content !== content) {
-    if (compiled?.paragraph) {
-      compiled.paragraph.delete() // clean up old C++ allocations memory leaks
+  if (ctx.cachedContent !== content) {
+    if (ctx.paragraph) {
+      ctx.paragraph.delete() // clean up old allocations
     }
 
-    compiled = {
-      content,
-      paragraph: null,
-      isBuilding: true,
-    }
-    compileCache.set(style, compiled)
+    ctx.cachedContent = content
+    ctx.paragraph = null
+    ctx.isBuilding = true
 
-    // Fire asynchronous background paragraph loading (Font Web Assembly parsing)
-    // This will trigger web fetch rules if fallbacks are missing.
     fontSystem
       .makeParagraph(
         content,
@@ -47,22 +39,21 @@ export function text(
           letterSpacing: style.letterSpacing,
           lineHeight: style.lineHeight,
         },
-        rect.width || 1000, // default wrap bound boundary parameter
+        rect.width || 1000,
       )
       .then((para) => {
-        // Re-hydrate UI on resolution
-        if (compiled) {
-          compiled.paragraph = para
-          compiled.isBuilding = false
-        }
+        ctx.paragraph = para
+        ctx.isBuilding = false
       })
-      .catch(console.error)
+      .catch((e) => {
+        console.error(e)
+        ctx.isBuilding = false
+      })
 
-    return // Skip draw execution since Para isn't populated
+    return // Skip draw execution
   }
 
-  // Draw if mapping is fully built bridging asynchronously into rendering cycle.
-  if (!compiled.isBuilding && compiled.paragraph) {
-    canvas.drawParagraph(compiled.paragraph, rect.x, rect.y)
+  if (!ctx.isBuilding && ctx.paragraph) {
+    canvas.drawParagraph(ctx.paragraph, rect.x, rect.y)
   }
 }

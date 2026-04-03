@@ -1,4 +1,5 @@
 export * from './types'
+export * from './context'
 export * from './view'
 export * from './text'
 export * from './image'

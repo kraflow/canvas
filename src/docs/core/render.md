@@ -85,6 +85,25 @@ _(Note: Both of these operations are highly optimized but do result in tearing d
 
 ---
 
+## node wrapper factories
+
+The `Renderer` provides wrapper factories to draw UI components while automatically managing the lifecycle of CanvasKit's C++ backed objects (like `Paint`, `Path`, and image sources). Because CanvasKit objects require explicit `.delete()` calls to prevent memory leaks, using these factories ensures that memory is perfectly maintained under both single draws and continuous animation loops.
+
+```ts
+const renderView = renderer.createViewNode()
+const renderText = renderer.createTextNode()
+const renderImage = renderer.createImageNode()
+
+renderer.setDrawFunction((canvas, ck) => {
+  // Call these every frame without worrying about manual memory cleanup!
+  renderView(viewStyle, rect, scrollPosition)
+  renderText(fontSystem, textStyle, 'Hello World', rect)
+  renderImage(imageStyle, 'https://example.com/image.png', rect)
+})
+```
+
+---
+
 ## teardown
 
 If the component hosting the canvas unmounts, you must dispose the renderer to free the active WebGL surface, clear animation frames, and prevent memory leaks.
@@ -101,3 +120,4 @@ renderer.dispose()
 | ------------- | ----------------------------------------------- | ----------------------------- |
 | `load.ts`     | `loadCanvasKit`                                 | CanvasKit CDN / Local Fetcher |
 | `renderer.ts` | `createRenderer`, `Renderer`, `RendererOptions` | WebGL surface orchestration   |
+| `context.ts`  | Context primitives & lifecycles                 | Internal memory management    |

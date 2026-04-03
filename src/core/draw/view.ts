@@ -1,42 +1,59 @@
-import type { Canvas, CanvasKit, Paint } from 'canvaskit-wasm'
+import type { Canvas, CanvasKit } from 'canvaskit-wasm'
 import type { ViewStyle } from '@/core/styles'
 import type { Rect, ScrollPosition } from './types'
+import type { ViewContext } from './context'
 
-interface CompiledView {
-  bgPaint: Paint | null
-  borderPaint: Paint | null
-  shadowPaint: Paint | null
-}
-
-const compileCache = new WeakMap<ViewStyle, CompiledView>()
-
-function compileViewStyle(ck: CanvasKit, style: ViewStyle): CompiledView {
-  let bgPaint: Paint | null = null
-  let borderPaint: Paint | null = null
-  let shadowPaint: Paint | null = null
-
+/**
+ * Draws a View constraint. Uses an explicitly provided ViewContext
+ * to avoid memory leaks while allowing dynamic real-time style updates.
+ */
+export function view(
+  ck: CanvasKit,
+  canvas: Canvas,
+  ctx: ViewContext,
+  style: ViewStyle,
+  rect: Rect,
+  scrollPosition?: ScrollPosition,
+) {
+  // -- Background Paint Management --
   if (style.backgroundColor && style.backgroundColor !== 'transparent') {
-    bgPaint = new ck.Paint()
-    bgPaint.setColor(ck.parseColorString(style.backgroundColor) || ck.Color4f(0, 0, 0, 0))
-    bgPaint.setStyle(ck.PaintStyle.Fill)
-    bgPaint.setAntiAlias(true)
+    if (!ctx.bgPaint) {
+      ctx.bgPaint = new ck.Paint()
+      ctx.bgPaint.setStyle(ck.PaintStyle.Fill)
+      ctx.bgPaint.setAntiAlias(true)
+    }
+    const color = ck.parseColorString(style.backgroundColor) || ck.Color4f(0, 0, 0, 0)
+    if (color) ctx.bgPaint.setColor(color)
+  } else if (ctx.bgPaint) {
+    ctx.bgPaint.delete()
+    ctx.bgPaint = null
   }
 
+  // -- Border Paint Management --
   if (
     style.borderWidth &&
     style.borderColor &&
     style.borderWidth > 0 &&
     style.borderColor !== 'transparent'
   ) {
-    borderPaint = new ck.Paint()
-    borderPaint.setColor(ck.parseColorString(style.borderColor) || ck.Color4f(0, 0, 0, 1))
-    borderPaint.setStyle(ck.PaintStyle.Stroke)
-    borderPaint.setStrokeWidth(style.borderWidth)
-    borderPaint.setAntiAlias(true)
+    if (!ctx.borderPaint) {
+      ctx.borderPaint = new ck.Paint()
+      ctx.borderPaint.setStyle(ck.PaintStyle.Stroke)
+      ctx.borderPaint.setAntiAlias(true)
+    }
+    ctx.borderPaint.setStrokeWidth(style.borderWidth)
+    const color = ck.parseColorString(style.borderColor) || ck.Color4f(0, 0, 0, 1)
+    if (color) ctx.borderPaint.setColor(color)
+  } else if (ctx.borderPaint) {
+    ctx.borderPaint.delete()
+    ctx.borderPaint = null
   }
 
+  // -- Shadow Paint Management --
   if (style.shadowColor && style.shadowOpacity && style.shadowOpacity > 0) {
-    shadowPaint = new ck.Paint()
+    if (!ctx.shadowPaint) {
+      ctx.shadowPaint = new ck.Paint()
+    }
     const baseCol = ck.parseColorString(style.shadowColor) || ck.Color4f(0, 0, 0, 1)
     baseCol[3] = style.shadowOpacity
 
@@ -44,32 +61,16 @@ function compileViewStyle(ck: CanvasKit, style: ViewStyle): CompiledView {
     const offsetY = style.shadowOffset?.height || 0
     const blurRadius = style.shadowRadius || 0
 
-    shadowPaint.setImageFilter(
+    // ImageFilters are slightly immutable, so we remake it strictly on the existing paint
+    ctx.shadowPaint.setImageFilter(
       ck.ImageFilter.MakeDropShadow(offsetX, offsetY, blurRadius, blurRadius, baseCol, null),
     )
+  } else if (ctx.shadowPaint) {
+    ctx.shadowPaint.delete()
+    ctx.shadowPaint = null
   }
 
-  return { bgPaint, borderPaint, shadowPaint }
-}
-
-/**
- * Draws a View constraint. If the view is a scroll-view, it configures
- * clipping and executes canvas.translate natively.
- */
-export function view(
-  ck: CanvasKit,
-  canvas: Canvas,
-  style: ViewStyle,
-  rect: Rect,
-  scrollPosition?: ScrollPosition,
-) {
-  let compiled = compileCache.get(style)
-  if (!compiled) {
-    compiled = compileViewStyle(ck, style)
-    compileCache.set(style, compiled)
-  }
-
-  const { bgPaint, borderPaint, shadowPaint } = compiled
+  // --- Drawing logic ---
   const bounds = ck.LTRBRect(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height)
 
   let rrect: Float32Array | null = null
@@ -77,21 +78,20 @@ export function view(
     rrect = ck.RRectXY(bounds, style.borderRadius, style.borderRadius)
   }
 
-  // Draw visual shapes backing the specific node bounding box
-  if (shadowPaint) {
-    if (rrect) canvas.drawRRect(rrect, shadowPaint)
-    else canvas.drawRect(bounds, shadowPaint)
+  if (ctx.shadowPaint) {
+    if (rrect) canvas.drawRRect(rrect, ctx.shadowPaint)
+    else canvas.drawRect(bounds, ctx.shadowPaint)
   }
-  if (bgPaint) {
-    if (rrect) canvas.drawRRect(rrect, bgPaint)
-    else canvas.drawRect(bounds, bgPaint)
+  if (ctx.bgPaint) {
+    if (rrect) canvas.drawRRect(rrect, ctx.bgPaint)
+    else canvas.drawRect(bounds, ctx.bgPaint)
   }
-  if (borderPaint) {
-    if (rrect) canvas.drawRRect(rrect, borderPaint)
-    else canvas.drawRect(bounds, borderPaint)
+  if (ctx.borderPaint) {
+    if (rrect) canvas.drawRRect(rrect, ctx.borderPaint)
+    else canvas.drawRect(bounds, ctx.borderPaint)
   }
 
-  // Clip boundaries mapping and execution
+  // Clip boundaries
   const isScrollOrHidden = style.overflow === 'scroll' || style.overflow === 'hidden'
   if (isScrollOrHidden) {
     canvas.save()
