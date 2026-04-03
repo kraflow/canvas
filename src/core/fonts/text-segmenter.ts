@@ -7,7 +7,8 @@ export interface TextSegment {
   dir: 'ltr' | 'rtl'
 }
 
-const RTL_REGEX = /[\u0590-\u05FF\u0600-\u06FF\u0750-\u077F]/
+// Covers Hebrew, Arabic, Syriac, Thaana, N'Ko, and related RTL scripts
+const RTL_REGEX = /[\u0590-\u08FF\uFB1D-\uFDFD\uFE70-\uFEFC]/
 
 // Very lightweight script detector — extend as needed
 function detectFamily(

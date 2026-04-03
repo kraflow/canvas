@@ -8,6 +8,7 @@ export interface FontLoader {
 
 export function createFontLoader(store: FontStore, maxConcurrent = 3): FontLoader {
   const inflight = new Map<string, Promise<ArrayBuffer>>()
+  const failed = new Set<string>()
   const queue: Array<{
     key: string
     url: string
@@ -32,6 +33,7 @@ export function createFontLoader(store: FontStore, maxConcurrent = 3): FontLoade
         })
         .catch((err) => {
           inflight.delete(item.key)
+          failed.add(item.key)
           item.reject(err)
         })
         .finally(() => {
@@ -42,6 +44,8 @@ export function createFontLoader(store: FontStore, maxConcurrent = 3): FontLoade
   }
 
   function load(key: string, url: string): Promise<ArrayBuffer> {
+    if (failed.has(key)) return Promise.reject(new Error(`[font-loader] Previously failed to load ${key}`))
+
     const cached = store.get(key)
     if (cached) return Promise.resolve(cached)
 

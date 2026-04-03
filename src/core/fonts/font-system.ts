@@ -2,7 +2,7 @@ import type { CanvasKit, FontMgr } from 'canvaskit-wasm'
 import { createFontStore, fontKey } from './font-store'
 import { createFontLoader } from './font-loader'
 import { createTypefaceRegistry } from './typeface-registry'
-import { buildFontMgr, disposeFontMgr } from './font-mgr-factory'
+import { buildFontMgr } from './font-mgr-factory'
 import { createPictureCache } from './picture-cache'
 import { resolveFallbacks } from './fallback-chain'
 import { segmentText } from './text-segmenter'
@@ -57,11 +57,13 @@ export async function createFontSystem(ck: CanvasKit, manifest: FontManifest): P
   // ── internal helpers ──
 
   function rebuildFontMgr(): FontMgr {
-    fontMgr = buildFontMgr(ck, store, store.allKeys())
+    const newMgr = buildFontMgr(ck, store, store.allKeys())
+    if (fontMgr) fontMgr.delete()
+    fontMgr = newMgr
     return fontMgr
   }
 
-  async function load(family: string, weight = 400): Promise<void> {
+  async function load(family: string, weight = 400, skipRebuild = false): Promise<void> {
     const key = fontKey(family, weight)
     if (store.has(key)) return
 
@@ -71,9 +73,17 @@ export async function createFontSystem(ck: CanvasKit, manifest: FontManifest): P
       return
     }
 
-    await loader.load(key, variant.url)
-    registry.register(key)
-    rebuildFontMgr()
+    try {
+      await loader.load(key, variant.url)
+      registry.register(key)
+    } catch (e) {
+      console.warn(`[font-system] Failed to load ${family}:${weight}`, e)
+      return
+    }
+
+    if (!skipRebuild) {
+      rebuildFontMgr()
+    }
   }
 
   async function prepareForText(
@@ -89,8 +99,8 @@ export async function createFontSystem(ck: CanvasKit, manifest: FontManifest): P
     )
 
     if (missing.length > 0) {
-      await Promise.all(missing.map((f) => load(f, weight)))
-      // FontMgr was rebuilt inside load() — return current
+      await Promise.all(missing.map((f) => load(f, weight, true)))
+      rebuildFontMgr()
     }
 
     return fontMgr
@@ -102,13 +112,14 @@ export async function createFontSystem(ck: CanvasKit, manifest: FontManifest): P
     opts: ParagraphOptions,
     maxWidth: number,
   ) {
-    const mgr = await prepareForText(text, primaryFamily, opts.fontStyle?.weight ?? 400)
+    const weight = opts.fontWeight ?? opts.fontStyle?.weight ?? 400
+    const mgr = await prepareForText(text, primaryFamily, weight)
     const segments = segmentText(text, manifest.families, primaryFamily)
     return buildParagraph(ck, mgr, segments, opts, maxWidth)
   }
 
   function dispose() {
-    disposeFontMgr()
+    if (fontMgr) fontMgr.delete()
     registry.dispose()
     pictures.dispose()
   }

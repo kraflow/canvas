@@ -163,7 +163,7 @@ fonts.dispose()
 const fonts = await createFontSystem(newCk, manifest)
 ```
 
-`dispose()` calls `.delete()` on all `SkTypeface` objects and clears the `SkPicture` cache. `FontStore` (raw `ArrayBuffer`s) is not cleared — buffers survive context loss and will be reused when you rebuild.
+`dispose()` calls `.delete()` on the internal `FontMgr`, all `SkTypeface` objects, and clears the `SkPicture` cache. `FontStore` (raw `ArrayBuffer`s) is not cleared — buffers survive context loss and will be reused when you rebuild.
 
 ---
 
@@ -175,7 +175,7 @@ const fonts = await createFontSystem(newCk, manifest)
 | `font-store.ts`        | `createFontStore`, `fontKey`                                                   | `ArrayBuffer` cache            |
 | `font-loader.ts`       | `createFontLoader`                                                             | fetch with dedup + concurrency |
 | `typeface-registry.ts` | `createTypefaceRegistry`                                                       | `SkTypeface` cache (CK-bound)  |
-| `font-mgr-factory.ts`  | `buildFontMgr`, `disposeFontMgr`                                               | `FontMgr.FromData` wrapper     |
+| `font-mgr-factory.ts`  | `buildFontMgr`                                                                 | `FontMgr.FromData` wrapper     |
 | `fallback-chain.ts`    | `resolveFallbacks`                                                             | unicode → family resolution    |
 | `text-segmenter.ts`    | `segmentText`                                                                  | per-script text splitting      |
 | `paragraph-builder.ts` | `buildParagraph`                                                               | `ParagraphBuilder` wrapper     |
