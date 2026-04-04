@@ -541,14 +541,14 @@ function drawOutsetBoxShadows(
   for (const shadow of shadows) {
     if (shadow.inset) continue
 
-    const spread = shadow.spreadDistance ?? 0
-    const blurRadius = shadow.blurRadius ?? 0
+    const spread = resolveDimension(shadow.spreadDistance ?? 0, rect.w)
+    const blurRadius = resolveDimension(shadow.blurRadius ?? 0, rect.w)
     const sigma = blurRadius / 2
     const color = shadow.color ? toColor(ck, shadow.color) : ck.Color(0, 0, 0, 0.5)
 
     const shadowRect: LayoutRect = {
-      x: rect.x + shadow.offsetX - spread,
-      y: rect.y + shadow.offsetY - spread,
+      x: rect.x + resolveDimension(shadow.offsetX, rect.w) - spread,
+      y: rect.y + resolveDimension(shadow.offsetY, rect.h) - spread,
       w: rect.w + spread * 2,
       h: rect.h + spread * 2,
     }
@@ -594,14 +594,17 @@ function drawInsetBoxShadows(
   canvas.clipRRect(clipRRect, ck.ClipOp.Intersect, true)
 
   for (const shadow of insetShadows) {
-    const spread = shadow.spreadDistance ?? 0
-    const blurRadius = shadow.blurRadius ?? 0
+    const spread = resolveDimension(shadow.spreadDistance ?? 0, rect.w)
+    const blurRadius = resolveDimension(shadow.blurRadius ?? 0, rect.w)
     const sigma = blurRadius / 2
     const color = shadow.color ? toColor(ck, shadow.color) : ck.Color(0, 0, 0, 0.5)
 
+    const offsetX = resolveDimension(shadow.offsetX, rect.w)
+    const offsetY = resolveDimension(shadow.offsetY, rect.h)
+
     const holeRect: LayoutRect = {
-      x: rect.x + shadow.offsetX + spread,
-      y: rect.y + shadow.offsetY + spread,
+      x: rect.x + offsetX + spread,
+      y: rect.y + offsetY + spread,
       w: Math.max(0, rect.w - spread * 2),
       h: Math.max(0, rect.h - spread * 2),
     }
@@ -619,7 +622,7 @@ function drawInsetBoxShadows(
 
     const holeRRect = makeRRect(ck, holeRect, holeRadii)
 
-    const expand = blurRadius * 2 + Math.abs(shadow.offsetX) + Math.abs(shadow.offsetY) + 100
+    const expand = blurRadius * 2 + Math.abs(offsetX) + Math.abs(offsetY) + 100
     const outerPB = new ck.PathBuilder()
     outerPB.addRect(
       Float32Array.from([
@@ -670,11 +673,26 @@ function drawBorders(
 
   if (btw === 0 && brw === 0 && bbw === 0 && blw === 0) return
 
+  const isRTL = style.direction === 'rtl'
   const baseColor = style.borderColor
-  const tc = style.borderTopColor ?? baseColor
-  const rc = style.borderRightColor ?? baseColor
-  const bc = style.borderBottomColor ?? baseColor
-  const lc = style.borderLeftColor ?? baseColor
+
+  // Resolve logical mappings
+  const tc =
+    style.borderTopColor ?? style.borderBlockStartColor ?? style.borderBlockColor ?? baseColor
+  const bc =
+    style.borderBottomColor ?? style.borderBlockEndColor ?? style.borderBlockColor ?? baseColor
+
+  const startColor =
+    style.borderStartColor ?? style.borderInlineStartColor ?? style.borderInlineColor
+  const endColor = style.borderEndColor ?? style.borderInlineEndColor ?? style.borderInlineColor
+
+  const lc =
+    style.borderLeftColor ?? (isRTL ? endColor : startColor) ?? style.borderInlineColor ?? baseColor
+  const rc =
+    style.borderRightColor ??
+    (isRTL ? startColor : endColor) ??
+    style.borderInlineColor ??
+    baseColor
 
   if (!tc && !rc && !bc && !lc) return
 
@@ -976,4 +994,12 @@ function toNum(value: number | string | undefined | null): number | undefined {
   if (typeof value === 'number') return value
   const n = parseFloat(value)
   return Number.isNaN(n) ? undefined : n
+}
+function resolveDimension(value: number | string | undefined, size: number): number {
+  if (value === undefined) return 0
+  if (typeof value === 'number') return value
+  if (value.endsWith('%')) {
+    return (parseFloat(value) / 100) * size
+  }
+  return parseFloat(value) || 0
 }

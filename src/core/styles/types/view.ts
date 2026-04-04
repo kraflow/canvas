@@ -75,10 +75,10 @@ export interface DropShadowValue {
  * See https://reactnative.dev/docs/boxshadowvalue
  */
 export interface BoxShadowValue {
-  offsetX: number
-  offsetY: number
-  blurRadius?: number
-  spreadDistance?: number
+  offsetX: number | string
+  offsetY: number | string
+  blurRadius?: number | string
+  spreadDistance?: number | string
   color?: ColorValue
   inset?: boolean
 }
@@ -113,8 +113,12 @@ export interface ViewStyle extends FlexStyle, ShadowStyle {
   borderStartColor?: ColorValue
   /** Equivalent to borderTopColor + borderBottomColor */
   borderBlockColor?: ColorValue
+  borderBlockStartColor?: ColorValue
+  borderBlockEndColor?: ColorValue
   /** Equivalent to borderLeftColor + borderRightColor */
   borderInlineColor?: ColorValue
+  borderInlineStartColor?: ColorValue
+  borderInlineEndColor?: ColorValue
 
   // ── Border radii ────────────────────────────────────────────────────────────
   borderRadius?: number | string

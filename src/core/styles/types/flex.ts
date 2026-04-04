@@ -58,8 +58,21 @@ export interface FlexStyle {
   right?: DimensionValue
   /** LTR=right, RTL=left */
   end?: DimensionValue
-  /** LTR=left, RTL=right */
   start?: DimensionValue
+  /** Shorthand for top, right, bottom, left */
+  inset?: DimensionValue
+  /** Shorthand for top and bottom */
+  insetBlock?: DimensionValue
+  /** Top position in logical terms */
+  insetBlockStart?: DimensionValue
+  /** Bottom position in logical terms */
+  insetBlockEnd?: DimensionValue
+  /** Shorthand for left and right */
+  insetInline?: DimensionValue
+  /** Start position in logical terms (LTR: left, RTL: right) */
+  insetInlineStart?: DimensionValue
+  /** End position in logical terms (LTR: right, RTL: left) */
+  insetInlineEnd?: DimensionValue
 
   // ── Margin ──────────────────────────────────────────────────────────────────
   margin?: DimensionValue
@@ -113,9 +126,9 @@ export interface FlexStyle {
   borderStartWidth?: number
 
   // ── Gap ─────────────────────────────────────────────────────────────────────
-  gap?: number
-  rowGap?: number
-  columnGap?: number
+  gap?: DimensionValue
+  rowGap?: DimensionValue
+  columnGap?: DimensionValue
 
   // ── Display / direction / z ──────────────────────────────────────────────────
   /** Default: 'flex' */

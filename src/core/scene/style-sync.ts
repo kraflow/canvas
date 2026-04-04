@@ -173,6 +173,15 @@ export function syncStyleToYoga(_yoga: Yoga, node: YogaNode, style: FlexStyle): 
   setEdgeDimension(node, 'setPosition', Edge.Start, style.start)
   setEdgeDimension(node, 'setPosition', Edge.End, style.end)
 
+  // Logical Insets
+  setEdgeDimension(node, 'setPosition', Edge.All, style.inset)
+  setEdgeDimension(node, 'setPosition', Edge.Vertical, style.insetBlock)
+  setEdgeDimension(node, 'setPosition', Edge.Top, style.insetBlockStart)
+  setEdgeDimension(node, 'setPosition', Edge.Bottom, style.insetBlockEnd)
+  setEdgeDimension(node, 'setPosition', Edge.Horizontal, style.insetInline)
+  setEdgeDimension(node, 'setPosition', Edge.Start, style.insetInlineStart)
+  setEdgeDimension(node, 'setPosition', Edge.End, style.insetInlineEnd)
+
   // ── Margin ─────────────────────────────────────────────────────────────────
   setEdgeMargin(node, Edge.All, style.margin)
   setEdgeMargin(node, Edge.Top, style.marginTop)
@@ -239,9 +248,9 @@ export function syncStyleToYoga(_yoga: Yoga, node: YogaNode, style: FlexStyle): 
   }
 
   // ── Gap ────────────────────────────────────────────────────────────────────
-  if (style.gap !== undefined) node.setGap(Gutter.All, style.gap)
-  if (style.rowGap !== undefined) node.setGap(Gutter.Row, style.rowGap)
-  if (style.columnGap !== undefined) node.setGap(Gutter.Column, style.columnGap)
+  setGapDimension(node, Gutter.All, style.gap)
+  setGapDimension(node, Gutter.Row, style.rowGap)
+  setGapDimension(node, Gutter.Column, style.columnGap)
 
   // ── Overflow ──────────────────────────────────────────────────────────────
   if (style.overflow !== undefined) {
@@ -365,6 +374,32 @@ function setEdgeMargin(node: YogaNode, edge: Edge, value: DimensionValue): void 
   }
   const n = parseFloat(value as string)
   if (!Number.isNaN(n)) node.setMargin(edge, n)
+}
+
+/**
+ * Sets gap (supports number and '%').
+ */
+function setGapDimension(node: YogaNode, gutter: Gutter, value: DimensionValue): void {
+  if (value === null || value === undefined) return
+  if (typeof value === 'number') {
+    node.setGap(gutter, value)
+    return
+  }
+  if (typeof value === 'string' && value.endsWith('%')) {
+    // If Yoga supports setGapPercent, use it. Otherwise fallback to setGap.
+    const val = parseFloat(value)
+    if ('setGapPercent' in node && typeof node.setGapPercent === 'function') {
+      ;(node as { setGapPercent: (gutter: Gutter, value: number) => void }).setGapPercent(
+        gutter,
+        val,
+      )
+    } else {
+      node.setGap(gutter, val)
+    }
+    return
+  }
+  const n = parseFloat(value as string)
+  if (!Number.isNaN(n)) node.setGap(gutter, n)
 }
 
 function toNum(value: number | string | undefined): number | undefined {
