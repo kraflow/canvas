@@ -1,12 +1,11 @@
-import type { Canvas, CanvasKit, Image as CKImage } from 'canvaskit-wasm'
-import type { ImageStyle } from '@/core/styles'
-import type { Rect, ScratchPaints } from './types'
-import type { ImageContext } from './context'
+import type { Canvas, CanvasKit, Image as CKImage, ColorFilter } from 'canvaskit-wasm'
+import type { ResolvedImageStyle } from '@/core/styles'
+import type { LayoutRectRect, ScratchPaints } from './types'
 
 // Global cache for unique images to prevent loading same assets exponentially via refs
 const imageAssetCache = new Map<
   string,
-  { image: CKImage | null; promise: Promise<CKImage | null> | null }
+  { image: CKImage | null; promise: Promise<CKImage | null> | null; ref: number }
 >()
 
 async function prefetchImage(ck: CanvasKit, src: string): Promise<CKImage | null> {
@@ -18,7 +17,7 @@ async function prefetchImage(ck: CanvasKit, src: string): Promise<CKImage | null
     .then((r) => r.arrayBuffer())
     .then((buffer) => {
       const img = ck.MakeImageFromEncoded(buffer)
-      if (img) imageAssetCache.set(src, { image: img, promise: null })
+      if (img) imageAssetCache.set(src, { image: img, promise: null, ref: 0 })
       return img
     })
     .catch((err) => {
@@ -26,102 +25,95 @@ async function prefetchImage(ck: CanvasKit, src: string): Promise<CKImage | null
       return null
     })
 
-  imageAssetCache.set(src, { image: null, promise: fetchPromise })
+  imageAssetCache.set(src, { image: null, promise: fetchPromise, ref: 0 })
   return fetchPromise
 }
 
 export function image(
   ck: CanvasKit,
   canvas: Canvas,
-  ctx: ImageContext,
-  style: ImageStyle,
+  rs: ResolvedImageStyle,
   src: string,
-  rect: Rect,
+  rect: LayoutRectRect,
   paints: ScratchPaints,
 ) {
+  if (!rs.display) return
+
   // Setup image paint
-  paints.image.setAlphaf(style.opacity !== undefined ? style.opacity : 1)
-  if (style.tintColor) {
-    const tint = ck.parseColorString(style.tintColor)
-    if (tint) {
-      paints.image.setColorFilter(ck.ColorFilter.MakeBlend(tint, ck.BlendMode.SrcIn))
-    } else {
-      paints.image.setColorFilter(null)
-    }
+  paints.image.setAlphaf(rs.opacity !== undefined ? rs.opacity : 1)
+
+  let cf: ColorFilter | null = null
+  if (rs.tintColor) {
+    cf = ck.ColorFilter.MakeBlend(rs.tintColor, ck.BlendMode.SrcIn)
+    paints.image.setColorFilter(cf)
   } else {
     paints.image.setColorFilter(null)
   }
 
-  // Handle src changes
-  if (ctx.cachedSrc !== src) {
-    ctx.cachedSrc = src
-    ctx.image = imageAssetCache.get(src)?.image || null
-    ctx.isLoading = !imageAssetCache.has(src) || !!imageAssetCache.get(src)?.promise
+  const image = imageAssetCache.get(src)
 
-    if (ctx.isLoading) {
-      prefetchImage(ck, src).then((img) => {
-        // Only assign if context hasn't shifted source before resolution
-        if (ctx.cachedSrc === src && img) {
-          ctx.image = img
-          ctx.isLoading = false
-        }
-      })
-    }
+  let isLoading = false
+  if (!image) {
+    isLoading = true
+    prefetchImage(ck, src)
+  } else {
+    isLoading = false
   }
 
   // Preview / Loader placeholders
-  if (ctx.isLoading || !ctx.image) {
-    if (style.backgroundColor && style.backgroundColor !== 'transparent') {
-      const color = ck.parseColorString(style.backgroundColor) || ck.Color4f(0, 0, 0, 0)
-      paints.fill.setColor(color)
-      const bounds = ck.LTRBRect(rect.x, rect.y, rect.x + rect.width, rect.y + rect.height)
+  if (isLoading || !image!.image) {
+    if (rs.backgroundColor) {
+      paints.fill.setColor(rs.backgroundColor)
+      paints.fill.setStyle(ck.PaintStyle.Fill)
+      paints.fill.setMaskFilter(null)
+      const bounds = ck.LTRBRect(rect.x, rect.y, rect.x + rect.w, rect.y + rect.h)
       canvas.drawRect(bounds, paints.fill)
     }
+    if (cf) cf.delete()
     return
   }
 
   // Native Image layout scaling bindings
-  if (ctx.image) {
-    const imgW = ctx.image.width()
-    const imgH = ctx.image.height()
-    const destW = rect.width
-    const destH = rect.height
+  const imgW = image!.image.width()
+  const imgH = image!.image.height()
+  const destW = rect.w
+  const destH = rect.h
 
-    let srcRect = ck.LTRBRect(0, 0, imgW, imgH)
-    let destRect = ck.LTRBRect(rect.x, rect.y, rect.x + destW, rect.y + destH)
+  let srcRect = ck.LTRBRect(0, 0, imgW, imgH)
+  let destRect = ck.LTRBRect(rect.x, rect.y, rect.x + destW, rect.y + destH)
 
-    const mode = style.objectFit || style.resizeMode || 'cover'
+  const mode = rs.mode
 
-    if (mode === 'contain' || mode === 'scale-down') {
-      let scale = Math.min(destW / imgW, destH / imgH)
-      if (mode === 'scale-down' && scale > 1) scale = 1 // Don't scale up
-      const w = imgW * scale
-      const h = imgH * scale
-      const cx = rect.x + (destW - w) / 2
-      const cy = rect.y + (destH - h) / 2
-      destRect = ck.LTRBRect(cx, cy, cx + w, cy + h)
-    } else if (mode === 'cover') {
-      const scale = Math.max(destW / imgW, destH / imgH)
-      const w = destW / scale
-      const h = destH / scale
-      const cx = (imgW - w) / 2
-      const cy = (imgH - h) / 2
-      srcRect = ck.LTRBRect(cx, cy, cx + w, cy + h)
-    } else if (mode === 'center') {
-      const cx = rect.x + (destW - imgW) / 2
-      const cy = rect.y + (destH - imgH) / 2
-      destRect = ck.LTRBRect(cx, cy, cx + imgW, cy + imgH)
-    } else if (mode === 'repeat') {
-      // Repeat would need a shader or repeated draw calls, fallback to stretch/fill for now
-    }
-
-    canvas.drawImageRect(ctx.image, srcRect, destRect, paints.image, false)
-
-    if (style.overlayColor) {
-      const color = ck.parseColorString(style.overlayColor) || ck.Color4f(0, 0, 0, 0)
-      paints.fill.setColor(color)
-      // Draw over the same dest bounds to cover just the image area
-      canvas.drawRect(destRect, paints.fill)
-    }
+  if (mode === 'contain' || mode === 'scale-down') {
+    let scale = Math.min(destW / imgW, destH / imgH)
+    if (mode === 'scale-down' && scale > 1) scale = 1 // Don't scale up
+    const w = imgW * scale
+    const h = imgH * scale
+    const cx = rect.x + (destW - w) / 2
+    const cy = rect.y + (destH - h) / 2
+    destRect = ck.LTRBRect(cx, cy, cx + w, cy + h)
+  } else if (mode === 'cover') {
+    const scale = Math.max(destW / imgW, destH / imgH)
+    const w = destW / scale
+    const h = destH / scale
+    const cx = (imgW - w) / 2
+    const cy = (imgH - h) / 2
+    srcRect = ck.LTRBRect(cx, cy, cx + w, cy + h)
+  } else if (mode === 'center') {
+    const cx = rect.x + (destW - imgW) / 2
+    const cy = rect.y + (destH - imgH) / 2
+    destRect = ck.LTRBRect(cx, cy, cx + imgW, cy + imgH)
+  } else if (mode === 'repeat') {
+    // Repeat would need a shader or repeated draw calls, fallback to stretch/fill for now
   }
+
+  canvas.drawImageRect(image!.image, srcRect, destRect, paints.image, false)
+
+  if (rs.overlayColor) {
+    paints.fill.setColor(rs.overlayColor)
+    // Draw over the same dest bounds to cover just the image area
+    canvas.drawRect(destRect, paints.fill)
+  }
+
+  if (cf) cf.delete()
 }

@@ -17,7 +17,6 @@ export interface FlexStyle {
     | 'space-evenly'
   flexDirection?: 'row' | 'column' | 'row-reverse' | 'column-reverse'
   flexWrap?: 'wrap' | 'nowrap' | 'wrap-reverse'
-  direction?: 'ltr' | 'rtl' | 'inherit'
 
   // Sizing
   flex?: number
@@ -42,8 +41,6 @@ export interface FlexStyle {
   marginRight?: DimensionValue
   marginTop?: DimensionValue
   marginVertical?: DimensionValue
-  marginEnd?: DimensionValue
-  marginStart?: DimensionValue
 
   // Paddings
   padding?: DimensionValue
@@ -53,8 +50,6 @@ export interface FlexStyle {
   paddingRight?: DimensionValue
   paddingTop?: DimensionValue
   paddingVertical?: DimensionValue
-  paddingEnd?: DimensionValue
-  paddingStart?: DimensionValue
 
   // Borders (layout impacts)
   borderWidth?: number
@@ -62,8 +57,6 @@ export interface FlexStyle {
   borderLeftWidth?: number
   borderRightWidth?: number
   borderTopWidth?: number
-  borderEndWidth?: number
-  borderStartWidth?: number
 
   // Positioning
   position?: 'absolute' | 'relative'
@@ -74,15 +67,6 @@ export interface FlexStyle {
   end?: DimensionValue
   start?: DimensionValue
   zIndex?: number
-
-  // Insets (Logical positioning)
-  inset?: DimensionValue
-  insetBlock?: DimensionValue
-  insetBlockEnd?: DimensionValue
-  insetBlockStart?: DimensionValue
-  insetInline?: DimensionValue
-  insetInlineEnd?: DimensionValue
-  insetInlineStart?: DimensionValue
 
   // Gaps
   gap?: number

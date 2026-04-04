@@ -2,53 +2,11 @@
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { loadCanvasKit, createRenderer, type Renderer } from '@/core/render'
 import { createFontSystem, createFontManifest, type FontSystem } from '@/core/fonts'
-import type { ViewStyle, TextStyle, ImageStyle } from '@/core/styles'
-import type { ViewNodeFn, TextNodeFn, ImageNodeFn } from '@/core/render/renderer'
+import { resolveViewStyle, resolveTextStyle, resolveImageStyle } from '@/core/styles'
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 let renderer: Renderer | null = null
 let fonts: FontSystem | null = null
-
-// Function Proxies
-let boxNode: ViewNodeFn | null = null
-let titleNode: TextNodeFn | null = null
-let subtitleNode: TextNodeFn | null = null
-let imgNode: ImageNodeFn | null = null
-
-const boxStyle: ViewStyle = {
-  backgroundColor: 'rgba(50, 150, 255, 0.2)',
-  borderRadius: 24,
-  borderWidth: 2,
-  borderColor: 'rgba(255, 255, 255, 0.8)',
-  shadowColor: '#00f2fe',
-  shadowOpacity: 0.5,
-  shadowRadius: 20,
-  shadowOffset: { width: 0, height: 10 },
-}
-
-const tStyle: TextStyle = {
-  fontSize: 32,
-  color: '#FFFFFF',
-  fontWeight: 'bold',
-  backgroundColor: '#FF3366',
-  borderRadius: 12,
-  borderWidth: 2,
-  borderColor: '#FFFFFF',
-  shadowColor: '#FF3366',
-  shadowOpacity: 0.8,
-  shadowRadius: 15,
-}
-
-const subtitleStyle: TextStyle = {
-  fontSize: 16,
-  color: 'rgba(255, 255, 255, 0.7)',
-  lineHeight: 1.5,
-}
-
-const imgStyle: ImageStyle = {
-  backgroundColor: '#333333',
-  opacity: 0.85,
-}
 
 onMounted(async () => {
   if (!canvasRef.value) return
@@ -75,11 +33,42 @@ onMounted(async () => {
     eagerLoad: ['Inter'],
   })
 
+  // 1. Resolve Styles Once
+  const rBoxStyle = resolveViewStyle(ck, {
+    backgroundColor: 'rgba(50, 150, 255, 0.2)',
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: 'rgba(255, 255, 255, 0.8)',
+  })
+
+  const rTitleStyle = resolveTextStyle(ck, {
+    fontSize: 32,
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    fontFamily: 'Inter',
+    backgroundColor: '#FF3366',
+    borderRadius: 12,
+    borderWidth: 2,
+  })
+
+  const rSubtitleStyle = resolveTextStyle(ck, {
+    fontSize: 16,
+    color: 'rgba(255, 255, 255, 0.7)',
+    lineHeight: 1.5,
+    fontFamily: 'Inter',
+  })
+
+  const rImgStyle = resolveImageStyle(ck, {
+    backgroundColor: '#333333',
+    opacity: 0.85,
+  })
+
   fonts = await createFontSystem(ck, manifest)
 
   renderer = createRenderer({
     canvasElement: canvasRef.value,
     pixelRatio: window.devicePixelRatio,
+    fonts,
     onDraw: (canvas, ck) => {
       canvas.clear(ck.Color(20, 20, 25, 255))
 
@@ -87,46 +76,44 @@ onMounted(async () => {
       const yOffset = Math.sin(time) * 10
 
       // 1. Draw a functional View
-      if (boxNode) {
-        boxNode(boxStyle, { x: 100, y: 150 + yOffset, width: 300, height: 400 })
-      }
+      renderer!.view({ x: 100, y: 150 + yOffset, w: 300, h: 400 }, rBoxStyle)
 
       // 2. Draw Text organically over the box
-      if (titleNode && fonts) {
-        titleNode(fonts, tStyle, 'Functional API', {
+      renderer!.text(
+        {
           x: 120,
           y: 180 + yOffset,
-          width: 280,
-          height: 100,
-        })
-      }
+          w: 280,
+          h: 100,
+        },
+        rTitleStyle,
+        'Functional API',
+      )
 
-      if (subtitleNode && fonts) {
-        subtitleNode(
-          fonts,
-          subtitleStyle,
-          'This entire layout is rendered strictly via the stateless weakmap wrappers without class memory leaks.',
-          { x: 120, y: 230 + yOffset, width: 260, height: 200 },
-        )
-      }
+      renderer!.text(
+        {
+          x: 120,
+          y: 230 + yOffset,
+          w: 260,
+          h: 200,
+        },
+        rSubtitleStyle,
+        'This entire layout is rendered strictly via the stateless weakmap wrappers without class memory leaks.',
+      )
 
       // 3. Draw Image
-      if (imgNode) {
-        imgNode(imgStyle, 'https://picsum.photos/300/300?random=1', {
+      renderer!.image(
+        {
           x: 500,
           y: 150,
-          width: 300,
-          height: 300,
-        })
-      }
+          w: 300,
+          h: 300,
+        },
+        rImgStyle,
+        'https://picsum.photos/300/300?random=1',
+      )
     },
   })
-
-  // Build the wrappers (before draw triggers in init)
-  boxNode = renderer.createViewNode()
-  titleNode = renderer.createTextNode()
-  subtitleNode = renderer.createTextNode()
-  imgNode = renderer.createImageNode()
 
   await renderer.init()
   renderer.setAnimating(true)

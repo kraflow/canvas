@@ -1,30 +1,17 @@
 import { type CanvasKit, type Surface, type Canvas as CKCanvas } from 'canvaskit-wasm'
 import { loadCanvasKit } from './load'
 
-import {
-  createViewContext,
-  createTextContext,
-  createImageContext,
-  destroyContext,
-  type ViewContext,
-  type TextContext,
-  type ImageContext,
-  type DrawContext,
-} from '../draw/context'
 import { view, restoreView, text, image } from '../draw'
-import type { Rect, ScrollPosition, ScratchPaints } from '../draw/types'
-import type { ViewStyle, TextStyle, ImageStyle } from '../styles'
+import type { ScrollPosition, ScratchPaints, LayoutRectRect } from '../draw/types'
+import type { ResolvedViewStyle, ResolvedTextStyle, ResolvedImageStyle } from '../styles'
 import type { FontSystem } from '../fonts'
 
 export interface RendererOptions {
   canvasElement: HTMLCanvasElement
   pixelRatio?: number
+  fonts: FontSystem
   onDraw?: (canvas: CKCanvas, ck: CanvasKit) => void
 }
-
-export type ViewNodeFn = (style: ViewStyle, rect: Rect, scrollPosition?: ScrollPosition) => void
-export type TextNodeFn = (fonts: FontSystem, style: TextStyle, content: string, rect: Rect) => void
-export type ImageNodeFn = (style: ImageStyle, src: string, rect: Rect) => void
 
 export interface Renderer {
   init(): Promise<void>
@@ -35,15 +22,10 @@ export interface Renderer {
   draw(): void
   dispose(): void
 
-  // Node wrapper factories
-  createViewNode(): ViewNodeFn
-  createTextNode(): TextNodeFn
-  createImageNode(): ImageNodeFn
-}
-
-type RegisteredNode = {
-  type: 'view' | 'text' | 'image'
-  ctx: DrawContext | null
+  // Draw
+  view: (rect: LayoutRectRect, style: ResolvedViewStyle, scroll?: ScrollPosition) => void
+  text: (rect: LayoutRectRect, style: ResolvedTextStyle, content: string) => void
+  image: (rect: LayoutRectRect, style: ResolvedImageStyle, src: string) => void
 }
 
 export function createRenderer(options: RendererOptions): Renderer {
@@ -57,32 +39,13 @@ export function createRenderer(options: RendererOptions): Renderer {
   let createdContextsForAnimation = false
   let width = options.canvasElement.clientWidth
   let height = options.canvasElement.clientHeight
-
-  const registeredNodes: RegisteredNode[] = []
-
-  // Internal Context Lifecycle
-  function createAllContexts() {
-    for (const node of registeredNodes) {
-      if (node.ctx) continue // already created
-      if (node.type === 'view') node.ctx = createViewContext()
-      else if (node.type === 'text') node.ctx = createTextContext()
-      else if (node.type === 'image') node.ctx = createImageContext()
-    }
-  }
-
-  function destroyAllContexts() {
-    for (const node of registeredNodes) {
-      if (node.ctx) {
-        destroyContext(node.ctx)
-        node.ctx = null
-      }
-    }
-  }
+  const fonts = options.fonts
 
   let scratchPaints: ScratchPaints | null = null
 
   function createPaints(): ScratchPaints {
     if (!ck) throw new Error('CanvasKit not loaded')
+
     const fill = new ck.Paint()
     fill.setStyle(ck.PaintStyle.Fill)
     fill.setAntiAlias(true)
@@ -112,46 +75,29 @@ export function createRenderer(options: RendererOptions): Renderer {
   }
 
   // Wrapper Factories
-  function createViewNode(): ViewNodeFn {
-    const node: RegisteredNode = { type: 'view', ctx: null }
-    registeredNodes.push(node)
-    return (style: ViewStyle, rect: Rect, scrollPosition?: ScrollPosition) => {
-      const canvas = surface?.getCanvas()
-      if (!ck || !canvas || !node.ctx || !scratchPaints) return
-      view(ck, canvas, node.ctx as ViewContext, style, rect, scrollPosition, scratchPaints)
-    }
+  function createViewNode(rect: LayoutRectRect, style: ResolvedViewStyle, scroll?: ScrollPosition) {
+    const canvas = surface?.getCanvas()
+    if (!ck || !canvas || !scratchPaints) return
+
+    view(ck, canvas, style, rect, scroll, scratchPaints)
   }
 
-  function createTextNode(): TextNodeFn {
-    const node: RegisteredNode = { type: 'text', ctx: null }
-    registeredNodes.push(node)
-    return (fonts: FontSystem, style: TextStyle, content: string, rect: Rect) => {
-      const canvas = surface?.getCanvas()
-      if (!ck || !canvas || !node.ctx || !scratchPaints) return
+  function createTextNode(rect: LayoutRectRect, style: ResolvedTextStyle, content: string) {
+    const canvas = surface?.getCanvas()
+    if (!ck || !canvas || !scratchPaints) return
 
-      // Implicit View wrapper (Draw Chaining)
-      view(ck, canvas, node.ctx as ViewContext, style, rect, undefined, scratchPaints)
-
-      text(ck, canvas, node.ctx as TextContext, fonts, style, content, rect)
-
-      restoreView(canvas, style)
-    }
+    view(ck, canvas, style, rect, undefined, scratchPaints)
+    text(canvas, fonts, style, content, rect)
+    restoreView(canvas, style)
   }
 
-  function createImageNode(): ImageNodeFn {
-    const node: RegisteredNode = { type: 'image', ctx: null }
-    registeredNodes.push(node)
-    return (style: ImageStyle, src: string, rect: Rect) => {
-      const canvas = surface?.getCanvas()
-      if (!ck || !canvas || !node.ctx || !scratchPaints) return
+  function createImageNode(rect: LayoutRectRect, style: ResolvedImageStyle, src: string) {
+    const canvas = surface?.getCanvas()
+    if (!ck || !canvas || !scratchPaints) return
 
-      // Implicit View wrapper (Draw Chaining)
-      view(ck, canvas, node.ctx as ViewContext, style, rect, undefined, scratchPaints)
-
-      image(ck, canvas, node.ctx as ImageContext, style, src, rect, scratchPaints)
-
-      restoreView(canvas, style)
-    }
+    view(ck, canvas, style, rect, undefined, scratchPaints)
+    image(ck, canvas, style, src, rect, scratchPaints)
+    restoreView(canvas, style)
   }
 
   async function init() {
@@ -238,7 +184,6 @@ export function createRenderer(options: RendererOptions): Renderer {
     isAnimating = animating
     if (isAnimating) {
       if (!scratchPaints) scratchPaints = createPaints()
-      createAllContexts()
       createdContextsForAnimation = true
       if (rafId === null) {
         rafId = requestAnimationFrame(frame)
@@ -252,7 +197,6 @@ export function createRenderer(options: RendererOptions): Renderer {
         destroyPaints(scratchPaints)
         scratchPaints = null
       }
-      destroyAllContexts()
       createdContextsForAnimation = false
     }
   }
@@ -266,7 +210,6 @@ export function createRenderer(options: RendererOptions): Renderer {
     const isSingleDraw = !isAnimating && !createdContextsForAnimation
     if (isSingleDraw) {
       scratchPaints = createPaints()
-      createAllContexts()
     }
 
     // clear and run user draw code
@@ -281,7 +224,6 @@ export function createRenderer(options: RendererOptions): Renderer {
     surface.flush()
 
     if (isSingleDraw) {
-      destroyAllContexts()
       destroyPaints(scratchPaints!)
       scratchPaints = null
     }
@@ -293,7 +235,6 @@ export function createRenderer(options: RendererOptions): Renderer {
       destroyPaints(scratchPaints)
       scratchPaints = null
     }
-    destroyAllContexts()
     if (surface) {
       surface.delete()
       surface = null
@@ -310,8 +251,10 @@ export function createRenderer(options: RendererOptions): Renderer {
     setAnimating,
     draw,
     dispose,
-    createViewNode,
-    createTextNode,
-    createImageNode,
+
+    // draw
+    view: createViewNode,
+    text: createTextNode,
+    image: createImageNode,
   }
 }

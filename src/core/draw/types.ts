@@ -1,10 +1,10 @@
 import type { Paint } from 'canvaskit-wasm'
 
-export interface Rect {
+export interface LayoutRectRect {
   x: number
   y: number
-  width: number
-  height: number
+  w: number
+  h: number
 }
 
 export interface ScrollPosition {

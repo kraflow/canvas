@@ -21,6 +21,13 @@ export interface FontSystem {
     opts: ParagraphOptions,
     maxWidth: number,
   ): Promise<import('canvaskit-wasm').Paragraph>
+  // Synchronous version that assumes fonts are already loaded
+  makeParagraphSync(
+    text: string,
+    primaryFamily: string,
+    opts: ParagraphOptions,
+    maxWidth: number,
+  ): import('canvaskit-wasm').Paragraph
   // Rebuild FontMgr after new fonts loaded (call after lazy loads)
   rebuildFontMgr(): FontMgr
   // Access sub-modules for advanced use
@@ -115,8 +122,17 @@ export async function createFontSystem(ck: CanvasKit, manifest: FontManifest): P
     maxWidth: number,
   ) {
     if (isDisposed) throw new Error('FontSystem is disposed')
-    const weight = opts.fontWeight ?? opts.fontStyle?.weight ?? 400
+    const weight = opts.fontWeight ?? 400
     await prepareForText(text, primaryFamily, weight)
+    return makeParagraphSync(text, primaryFamily, opts, maxWidth)
+  }
+
+  function makeParagraphSync(
+    text: string,
+    primaryFamily: string,
+    opts: ParagraphOptions,
+    maxWidth: number,
+  ) {
     if (isDisposed) throw new Error('FontSystem is disposed')
     const segments = segmentText(text, manifest.families, primaryFamily)
     return buildParagraph(ck, fontMgr, segments, opts, maxWidth)
@@ -134,6 +150,7 @@ export async function createFontSystem(ck: CanvasKit, manifest: FontManifest): P
     load,
     prepareForText,
     makeParagraph,
+    makeParagraphSync,
     rebuildFontMgr,
     store,
     loader,

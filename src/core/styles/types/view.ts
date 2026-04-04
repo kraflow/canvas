@@ -20,16 +20,14 @@ export type MixBlendMode =
   | 'color'
   | 'luminosity'
 
-export type BoxShadowValue =
-  | string // CSS-like: "10px 5px 15px rgba(0,0,0,0.3)" or "inset 2px 2px 4px red"
-  | Array<{
-      offsetX: Length
-      offsetY: Length
-      blurRadius?: Length
-      spreadDistance?: Length
-      color?: string
-      inset?: boolean
-    }>
+export type BoxShadowValue = Array<{
+  offsetX: Length
+  offsetY: Length
+  blurRadius?: Length
+  spreadDistance?: Length
+  color?: string
+  inset?: boolean
+}>
 
 export type FilterFunction =
   | { brightness: number | `${number}%` }
@@ -64,35 +62,19 @@ export interface ViewStyle extends FlexStyle, TransformStyle {
   boxShadow?: BoxShadowValue
   filter?: string | FilterFunction[]
 
-  // Shadows (Legacy / iOS)
-  shadowColor?: string
-  shadowOffset?: { width: number; height: number }
-  shadowOpacity?: number
-  shadowRadius?: number
-
-  // Elevation (Android-like, mapped to shadow natively)
-  elevation?: number
-
-  // Borders
+  //  Borders
   borderColor?: string
   borderTopColor?: string
   borderRightColor?: string
   borderBottomColor?: string
   borderLeftColor?: string
-  borderEndColor?: string
-  borderStartColor?: string
 
   borderRadius?: number
   borderTopLeftRadius?: number
   borderTopRightRadius?: number
   borderBottomLeftRadius?: number
   borderBottomRightRadius?: number
-  borderEndEndRadius?: number
-  borderEndStartRadius?: number
-  borderStartEndRadius?: number
-  borderStartStartRadius?: number
 
-  borderCurve?: 'circular' | 'continuous'
   borderStyle?: BorderStyle
 
   // Outlines

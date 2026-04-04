@@ -66,6 +66,7 @@ onMounted(async () => {
   renderer = createRenderer({
     canvasElement: canvasRef.value,
     pixelRatio: window.devicePixelRatio,
+    fonts,
     onDraw: (canvas, ck) => {
       const time = performance.now() * 0.001
 
