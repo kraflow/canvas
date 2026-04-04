@@ -31,6 +31,8 @@ export function syncStyleToYoga(_yoga: Yoga, node: YogaNode, style: FlexStyle): 
       contents: Display.Contents,
     }
     node.setDisplay(displayMap[style.display] ?? Display.Flex)
+  } else {
+    node.setDisplay(Display.Flex)
   }
 
   // ── Direction ──────────────────────────────────────────────────────────────
@@ -41,6 +43,8 @@ export function syncStyleToYoga(_yoga: Yoga, node: YogaNode, style: FlexStyle): 
       rtl: Direction.RTL,
     }
     node.setDirection(dirMap[style.direction] ?? Direction.Inherit)
+  } else {
+    node.setDirection(Direction.Inherit)
   }
 
   // ── Flex direction ─────────────────────────────────────────────────────────
@@ -75,6 +79,8 @@ export function syncStyleToYoga(_yoga: Yoga, node: YogaNode, style: FlexStyle): 
       'space-evenly': Justify.SpaceEvenly,
     }
     node.setJustifyContent(jcMap[style.justifyContent] ?? Justify.FlexStart)
+  } else {
+    node.setJustifyContent(Justify.FlexStart)
   }
 
   // ── Align items ────────────────────────────────────────────────────────────
@@ -127,27 +133,19 @@ export function syncStyleToYoga(_yoga: Yoga, node: YogaNode, style: FlexStyle): 
   if (style.height !== undefined) {
     setDimensionAuto(node, 'setHeight', 'setHeightPercent', 'setHeightAuto', style.height)
   }
-  if (style.minWidth !== undefined) {
-    setDimension(node, 'setMinWidth', 'setMinWidthPercent', style.minWidth)
-  }
-  if (style.maxWidth !== undefined) {
-    setDimension(node, 'setMaxWidth', 'setMaxWidthPercent', style.maxWidth)
-  }
-  if (style.minHeight !== undefined) {
-    setDimension(node, 'setMinHeight', 'setMinHeightPercent', style.minHeight)
-  }
-  if (style.maxHeight !== undefined) {
-    setDimension(node, 'setMaxHeight', 'setMaxHeightPercent', style.maxHeight)
-  }
+  setDimension(node, 'setMinWidth', 'setMinWidthPercent', style.minWidth)
+  setDimension(node, 'setMaxWidth', 'setMaxWidthPercent', style.maxWidth)
+  setDimension(node, 'setMinHeight', 'setMinHeightPercent', style.minHeight)
+  setDimension(node, 'setMaxHeight', 'setMaxHeightPercent', style.maxHeight)
 
   // ── Aspect ratio ──────────────────────────────────────────────────────────
-  if (style.aspectRatio !== undefined) {
-    const ratio =
-      typeof style.aspectRatio === 'string'
+  node.setAspectRatio(
+    style.aspectRatio !== undefined
+      ? typeof style.aspectRatio === 'string'
         ? parseAspectRatio(style.aspectRatio)
         : style.aspectRatio
-    node.setAspectRatio(ratio)
-  }
+      : NaN,
+  )
 
   // ── Box sizing ─────────────────────────────────────────────────────────────
   if (style.boxSizing !== undefined) {
@@ -164,6 +162,8 @@ export function syncStyleToYoga(_yoga: Yoga, node: YogaNode, style: FlexStyle): 
       static: PositionType.Static,
     }
     node.setPositionType(posMap[style.position] ?? PositionType.Relative)
+  } else {
+    node.setPositionType(PositionType.Relative)
   }
 
   setEdgeDimension(node, 'setPosition', Edge.Top, style.top)
@@ -225,27 +225,13 @@ export function syncStyleToYoga(_yoga: Yoga, node: YogaNode, style: FlexStyle): 
   setEdgeDimension(node, 'setPadding', Edge.End, style.paddingInlineEnd)
 
   // ── Border widths (layout contribution) ───────────────────────────────────
-  if (style.borderWidth !== undefined) {
-    node.setBorder(Edge.All, toNum(style.borderWidth))
-  }
-  if (style.borderTopWidth !== undefined) {
-    node.setBorder(Edge.Top, toNum(style.borderTopWidth))
-  }
-  if (style.borderBottomWidth !== undefined) {
-    node.setBorder(Edge.Bottom, toNum(style.borderBottomWidth))
-  }
-  if (style.borderLeftWidth !== undefined) {
-    node.setBorder(Edge.Left, toNum(style.borderLeftWidth))
-  }
-  if (style.borderRightWidth !== undefined) {
-    node.setBorder(Edge.Right, toNum(style.borderRightWidth))
-  }
-  if (style.borderStartWidth !== undefined) {
-    node.setBorder(Edge.Start, toNum(style.borderStartWidth))
-  }
-  if (style.borderEndWidth !== undefined) {
-    node.setBorder(Edge.End, toNum(style.borderEndWidth))
-  }
+  node.setBorder(Edge.All, toNum(style.borderWidth) ?? NaN)
+  node.setBorder(Edge.Top, toNum(style.borderTopWidth) ?? NaN)
+  node.setBorder(Edge.Bottom, toNum(style.borderBottomWidth) ?? NaN)
+  node.setBorder(Edge.Left, toNum(style.borderLeftWidth) ?? NaN)
+  node.setBorder(Edge.Right, toNum(style.borderRightWidth) ?? NaN)
+  node.setBorder(Edge.Start, toNum(style.borderStartWidth) ?? NaN)
+  node.setBorder(Edge.End, toNum(style.borderEndWidth) ?? NaN)
 
   // ── Gap ────────────────────────────────────────────────────────────────────
   setGapDimension(node, Gutter.All, style.gap)
@@ -289,8 +275,7 @@ function setDimensionAuto(
   autoFn: 'setWidthAuto' | 'setHeightAuto' | 'setFlexBasisAuto',
   value: DimensionValue,
 ): void {
-  if (value === null || value === undefined) return
-  if (value === 'auto') {
+  if (value === null || value === undefined || value === 'auto') {
     node[autoFn]()
     return
   }
@@ -305,6 +290,7 @@ function setDimensionAuto(
   // Fallback: parse as number
   const n = parseFloat(value as string)
   if (!Number.isNaN(n)) node[pointFn](n)
+  else node[autoFn]()
 }
 
 /**
@@ -320,7 +306,10 @@ function setDimension(
     | 'setMaxHeightPercent',
   value: DimensionValue,
 ): void {
-  if (value === null || value === undefined) return
+  if (value === null || value === undefined) {
+    node[pointFn](NaN)
+    return
+  }
   if (typeof value === 'number') {
     node[pointFn](value)
     return
@@ -331,6 +320,7 @@ function setDimension(
   }
   const n = parseFloat(value as string)
   if (!Number.isNaN(n)) node[pointFn](n)
+  else node[pointFn](NaN)
 }
 
 /**
@@ -342,7 +332,10 @@ function setEdgeDimension(
   edge: Edge,
   value: DimensionValue,
 ): void {
-  if (value === null || value === undefined) return
+  if (value === null || value === undefined) {
+    node[fn](edge, NaN)
+    return
+  }
   if (typeof value === 'number') {
     node[fn](edge, value)
     return
@@ -352,14 +345,17 @@ function setEdgeDimension(
     return
   }
   const n = parseFloat(value as string)
-  if (!Number.isNaN(n)) node[fn](edge, n)
+  node[fn](edge, Number.isNaN(n) ? NaN : n)
 }
 
 /**
  * Sets margin (supports number, '%', and 'auto').
  */
 function setEdgeMargin(node: YogaNode, edge: Edge, value: DimensionValue): void {
-  if (value === null || value === undefined) return
+  if (value === null || value === undefined) {
+    node.setMargin(edge, NaN)
+    return
+  }
   if (value === 'auto') {
     node.setMarginAuto(edge)
     return
@@ -373,14 +369,17 @@ function setEdgeMargin(node: YogaNode, edge: Edge, value: DimensionValue): void 
     return
   }
   const n = parseFloat(value as string)
-  if (!Number.isNaN(n)) node.setMargin(edge, n)
+  node.setMargin(edge, Number.isNaN(n) ? NaN : n)
 }
 
 /**
  * Sets gap (supports number and '%').
  */
 function setGapDimension(node: YogaNode, gutter: Gutter, value: DimensionValue): void {
-  if (value === null || value === undefined) return
+  if (value === null || value === undefined) {
+    node.setGap(gutter, NaN)
+    return
+  }
   if (typeof value === 'number') {
     node.setGap(gutter, value)
     return
@@ -388,7 +387,11 @@ function setGapDimension(node: YogaNode, gutter: Gutter, value: DimensionValue):
   if (typeof value === 'string' && value.endsWith('%')) {
     // If Yoga supports setGapPercent, use it. Otherwise fallback to setGap.
     const val = parseFloat(value)
-    if ('setGapPercent' in node && typeof node.setGapPercent === 'function') {
+    if (
+      'setGapPercent' in node &&
+      typeof (node as { setGapPercent: (gutter: Gutter, value: number) => void }).setGapPercent ===
+        'function'
+    ) {
       ;(node as { setGapPercent: (gutter: Gutter, value: number) => void }).setGapPercent(
         gutter,
         val,
@@ -399,7 +402,7 @@ function setGapDimension(node: YogaNode, gutter: Gutter, value: DimensionValue):
     return
   }
   const n = parseFloat(value as string)
-  if (!Number.isNaN(n)) node.setGap(gutter, n)
+  node.setGap(gutter, Number.isNaN(n) ? NaN : n)
 }
 
 function toNum(value: number | string | undefined): number | undefined {

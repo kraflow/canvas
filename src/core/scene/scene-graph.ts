@@ -14,9 +14,11 @@ import type {
   SerializedScreenNode,
 } from './types'
 import { syncStyleToYoga } from './style-sync'
+import { flattenStyle } from '@/core/styles/flatten'
 import { TextMeasureCache } from './text-measure-cache'
 import { ImageCache } from '@/core/renderer/draw/image-cache'
 import { toSerializableScreen } from './serialization'
+import type { StyleProp } from '@/core/styles'
 
 /** Properties that, when changed, require a Yoga layout recomputation. */
 const LAYOUT_PROPS = new Set([
@@ -183,9 +185,10 @@ export class SceneGraph {
 
   public createNode(
     type: SceneNodeType,
-    style: ViewStyle | TextStyle | ImageStyle,
+    styleProp: StyleProp<ViewStyle | TextStyle | ImageStyle>,
     src?: string,
   ): SceneNode {
+    const style = flattenStyle(styleProp)
     const yogaNode = this.yoga.Node.create()
 
     const node: SceneNode = {
@@ -249,8 +252,12 @@ export class SceneGraph {
     node.yogaNode.freeRecursive()
   }
 
-  public applyStyle(node: SceneNode, style: ViewStyle | TextStyle | ImageStyle): void {
+  public applyStyle(
+    node: SceneNode,
+    styleProp: StyleProp<ViewStyle | TextStyle | ImageStyle>,
+  ): void {
     const oldStyle = node.style
+    const style = flattenStyle(styleProp)
     node.style = style
 
     let needsLayout = false
