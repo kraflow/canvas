@@ -4,9 +4,19 @@ import type { CanvasKit } from 'canvaskit-wasm'
 import type { ViewStyle, TextStyle, ImageStyle } from '@/core/styles'
 import type { LayoutRect } from '@/core/renderer/types'
 import type { FontSystem, ParagraphOptions } from '@/core/fonts'
-import type { SceneNode, ScreenNode, SceneNodeType, WalkVisitor } from './types'
+import type {
+  SceneNode,
+  ScreenNode,
+  SceneNodeType,
+  WalkVisitor,
+  SerializedProject,
+  SerializedSceneNode,
+  SerializedScreenNode,
+} from './types'
 import { syncStyleToYoga } from './style-sync'
 import { TextMeasureCache } from './text-measure-cache'
+import { ImageCache } from '@/core/renderer/draw/image-cache'
+import { toSerializableScreen } from './serialization'
 
 /** Properties that, when changed, require a Yoga layout recomputation. */
 const LAYOUT_PROPS = new Set([
@@ -78,6 +88,7 @@ export class SceneGraph {
   private readonly ck: CanvasKit
   private readonly fonts: FontSystem
   private readonly textMeasureCache = new TextMeasureCache()
+  private readonly imageCache: ImageCache
   private readonly screens = new Map<string, ScreenNode>()
   private nextId = 1
 
@@ -85,6 +96,7 @@ export class SceneGraph {
     this.yoga = yoga
     this.ck = ck
     this.fonts = fonts
+    this.imageCache = new ImageCache(ck)
   }
 
   /**
@@ -169,13 +181,18 @@ export class SceneGraph {
   // Node management
   // ─────────────────────────────────────────────────────────────────────────
 
-  public createNode(type: SceneNodeType, style: ViewStyle | TextStyle | ImageStyle): SceneNode {
+  public createNode(
+    type: SceneNodeType,
+    style: ViewStyle | TextStyle | ImageStyle,
+    src?: string,
+  ): SceneNode {
     const yogaNode = this.yoga.Node.create()
 
     const node: SceneNode = {
       id: this.genId(type),
       type,
       style,
+      src,
       children: [],
       parent: null,
       yogaNode,
@@ -184,6 +201,12 @@ export class SceneGraph {
 
     if (type === 'text') {
       this.setupTextMeasurement(node)
+    }
+
+    if (type === 'image' && src) {
+      this.imageCache.load(src).then((image) => {
+        if (image) node.image = image
+      })
     }
 
     syncStyleToYoga(this.yoga, yogaNode, style)
@@ -284,6 +307,55 @@ export class SceneGraph {
     for (const screen of this.screens.values()) {
       this.walkNode(screen.root, screen.x, screen.y, visitor)
     }
+  }
+
+  /**
+   * Serializes the entire SceneGraph (all screens and nodes) to a plain object.
+   * This object can be safely converted to a JSON string for file storage.
+   */
+  public exportProject(): SerializedProject {
+    const screens: SerializedScreenNode[] = []
+    for (const screen of this.screens.values()) {
+      screens.push(toSerializableScreen(screen))
+    }
+
+    return {
+      version: '1.0.0',
+      screens,
+    }
+  }
+
+  /**
+   * Clears the current state and reconstructs the scene graph from a serialized project.
+   */
+  public async importProject(project: SerializedProject): Promise<void> {
+    this.dispose()
+
+    for (const s of project.screens) {
+      const screen = this.addScreen(s.id, s.x, s.y, s.width, s.height)
+      // Apply root style and children
+      this.applyStyle(screen.root, s.root.style)
+      for (const childData of s.root.children) {
+        const child = await this.reconstructNode(childData)
+        this.appendChild(screen.root, child)
+      }
+    }
+
+    this.computeAllLayouts()
+  }
+
+  private async reconstructNode(data: SerializedSceneNode): Promise<SceneNode> {
+    const node = this.createNode(data.type, data.style, data.src)
+    node.text = data.text
+    node.scroll = data.scroll
+
+    // Recursively add children
+    for (const childData of data.children) {
+      const child = await this.reconstructNode(childData)
+      this.appendChild(node, child)
+    }
+
+    return node
   }
 
   public dispose(): void {

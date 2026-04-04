@@ -54,6 +54,9 @@ export interface SceneNode {
   /** CanvasKit image reference (only for type === 'image') */
   image?: Image | null
 
+  /** Source path/URL for the image (only for type === 'image', used for persistence) */
+  src?: string
+
   /** Scroll offset (only for type === 'view') */
   scroll?: ScrollPosition
 }
@@ -101,3 +104,33 @@ export interface ScreenNode {
  * @param absoluteRect - The node's absolute rect (canvas coordinates)
  */
 export type WalkVisitor = (node: SceneNode, absoluteRect: LayoutRect) => void
+
+// =============================================================================
+// Serialization types
+// =============================================================================
+
+/** Serializable version of a SceneNode (plain data, no WASM objects) */
+export interface SerializedSceneNode {
+  type: SceneNodeType
+  style: ViewStyle | TextStyle | ImageStyle
+  text?: string
+  src?: string
+  scroll?: ScrollPosition
+  children: SerializedSceneNode[]
+}
+
+/** Serializable version of a ScreenNode */
+export interface SerializedScreenNode {
+  id: string
+  x: number
+  y: number
+  width: number
+  height: number
+  root: SerializedSceneNode
+}
+
+/** Complete project state for file storage */
+export interface SerializedProject {
+  version: string
+  screens: SerializedScreenNode[]
+}
