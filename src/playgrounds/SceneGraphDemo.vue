@@ -1,6 +1,26 @@
 <template>
   <div class="canvas-container">
-    <canvas ref="canvasRef"></canvas>
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <button
+        :class="['tool-btn', activeMode === 'edit' ? 'active' : '']"
+        @click="setMode('edit')"
+        title="Edit Mode (V)"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m5 3 3.057 14.947c.142.699.94 1.002 1.492.56L13.5 15.5l3.5 6.5 2.5-1.5-3.5-6.5 4.586-1.586c.618-.213.684-1.047.113-1.353L5 3z"/></svg>
+        <span>Edit</span>
+      </button>
+      <button
+        :class="['tool-btn', activeMode === 'move' ? 'active' : '']"
+        @click="setMode('move')"
+        title="Move Mode (H)"
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/><path d="M14 10V4a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/><path d="M10 10.5V6a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/><path d="M6 15V13a2 2 0 0 0-2-2v0a2 2 0 0 0-2 2v0"/></svg>
+        <span>Move</span>
+      </button>
+    </div>
+
+    <canvas ref="canvasRef" :class="{ 'cursor-hand': activeMode === 'move' }"></canvas>
   </div>
 </template>
 
@@ -12,13 +32,19 @@ import { createFontSystem, type FontSystem } from '@/core/fonts'
 import { renderView, renderText, renderImage, ImageCache, DrawContext } from '@/core/renderer/draw'
 import type { ViewStyle, TextStyle, ImageStyle } from '@/core/styles'
 import { SceneGraph, type SceneNode } from '@/core/scene'
-import { useViewport } from './useViewport'
+import { InteractionManager } from '@/core/interaction/InteractionManager'
+import { Viewport } from '@/core/viewport/Viewport'
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 let renderer: CanvasRenderer | null = null
-const { camera } = useViewport(canvasRef, {
-  onResize: (w, h) => renderer?.resize(w, h),
-})
+const interactionManager = ref<InteractionManager | null>(null)
+const viewport = new Viewport()
+const activeMode = ref<'edit' | 'move'>('edit')
+
+const setMode = (mode: 'edit' | 'move') => {
+  activeMode.value = mode
+  interactionManager.value?.setMode(mode)
+}
 
 let ck: CanvasKit | null = null
 let fonts: FontSystem | null = null
@@ -343,8 +369,9 @@ function draw(canvas: Canvas, ckRef: CanvasKit) {
   canvas.clear(ckRef.Color(10, 10, 12, 255))
 
   canvas.save()
-  canvas.translate(camera.value.x, camera.value.y)
-  canvas.scale(camera.value.zoom, camera.value.zoom)
+  const v = viewport
+  canvas.translate(v.x, v.y)
+  canvas.scale(v.zoom, v.zoom)
 
   scene.walk((node, rect) => {
     switch (node.type) {
@@ -366,6 +393,8 @@ function draw(canvas: Canvas, ckRef: CanvasKit) {
 // =============================================================================
 // Mount
 // =============================================================================
+
+let cleanup: (() => void) | null = null
 
 onMounted(async () => {
   try {
@@ -420,6 +449,36 @@ onMounted(async () => {
 
     await renderer.initialize()
     renderer.setAnimating(true)
+
+    // ── Interaction manager ──────────────────────────────────────────────────
+    interactionManager.value = new InteractionManager(canvasRef.value, scene, viewport)
+    interactionManager.value.on((e) => {
+      if (e.type === 'click' && e.node) {
+        console.log('[SceneGraphDemo] Clicked node:', e.node.id, e.node.type)
+      }
+    })
+
+    // ── Handle Resize ────────────────────────────────────────────────────────
+    const handleResize = () => {
+      if (canvasRef.value && canvasRef.value.parentElement) {
+        const { clientWidth, clientHeight } = canvasRef.value.parentElement
+        renderer?.resize(clientWidth, clientHeight)
+      }
+    }
+    window.addEventListener('resize', handleResize)
+    handleResize()
+
+    // ── Keyboard shortcuts ──────────────────────────────────────────────────
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key.toLowerCase() === 'v') setMode('edit')
+      if (e.key.toLowerCase() === 'h') setMode('move')
+    }
+    window.addEventListener('keydown', handleKeyDown)
+
+    cleanup = () => {
+      window.removeEventListener('resize', handleResize)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
   } catch (error) {
     console.error('[SceneGraphDemo] Initialization failed:', error)
   }
@@ -430,6 +489,7 @@ onMounted(async () => {
 // =============================================================================
 
 onBeforeUnmount(() => {
+  cleanup?.()
   if (scene) {
     scene.dispose()
     scene = null
@@ -460,10 +520,62 @@ canvas {
   display: block;
   width: 100%;
   height: 100%;
-  cursor: grab;
 }
 
-canvas:active {
-  cursor: grabbing;
+.cursor-hand {
+  cursor: grab !important;
+}
+
+.cursor-hand:active {
+  cursor: grabbing !important;
+}
+
+.toolbar {
+  position: absolute;
+  top: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  background: rgba(18, 18, 20, 0.8);
+  backdrop-filter: blur(12px);
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  z-index: 10;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+.tool-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+  border: none;
+  color: #a1a1aa;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tool-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: #fff;
+}
+
+.tool-btn.active {
+  background: #6c6dfe;
+  color: #fff;
+}
+
+.tool-btn svg {
+  opacity: 0.7;
+}
+
+.tool-btn.active svg {
+  opacity: 1;
 }
 </style>

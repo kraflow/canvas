@@ -317,6 +317,19 @@ export class SceneGraph {
   }
 
   /**
+   * Finds the topmost SceneNode at the given world (camera-space) coordinates.
+   */
+  public hitTest(worldX: number, worldY: number): SceneNode | null {
+    // Walk screens in reverse order of addition
+    const screens = Array.from(this.screens.values()).reverse()
+    for (const screen of screens) {
+      const hit = this.hitTestNode(screen.root, screen.x, screen.y, worldX, worldY)
+      if (hit) return hit
+    }
+    return null
+  }
+
+  /**
    * Serializes the entire SceneGraph (all screens and nodes) to a plain object.
    * This object can be safely converted to a JSON string for file storage.
    */
@@ -431,6 +444,43 @@ export class SceneGraph {
     for (const child of node.children) {
       this.walkNode(child, childOffX, childOffY, visitor)
     }
+  }
+
+  private hitTestNode(
+    node: SceneNode,
+    parentAbsX: number,
+    parentAbsY: number,
+    worldX: number,
+    worldY: number,
+  ): SceneNode | null {
+    const absX = parentAbsX + node.rect.x
+    const absY = parentAbsY + node.rect.y
+    const absW = node.rect.w
+    const absH = node.rect.h
+
+    // 1. Check children first (top-down in Z-order)
+    let childOffX = absX
+    let childOffY = absY
+    if (node.scroll) {
+      childOffX -= node.scroll.x
+      childOffY -= node.scroll.y
+    }
+
+    const children = Array.from(node.children).reverse()
+    for (const child of children) {
+      const hit = this.hitTestNode(child, childOffX, childOffY, worldX, worldY)
+      if (hit) return hit
+    }
+
+    // 2. Check if point is inside this node's bounds
+    if (worldX >= absX && worldX <= absX + absW && worldY >= absY && worldY <= absY + absH) {
+      // Check pointer-events style if we want to support it
+      const style = node.style as Record<string, unknown>
+      if (style.pointerEvents === 'none') return null
+      return node
+    }
+
+    return null
   }
 
   private setupTextMeasurement(node: SceneNode): void {

@@ -1,0 +1,155 @@
+import type { SceneGraph } from '@/core/scene/scene-graph'
+import { Viewport } from '@/core/viewport/Viewport'
+import type { SceneNode } from '@/core/scene/types'
+import type { InteractionState, InteractionCallback, InteractionEvent, InteractionEventType, InteractionMode } from './types'
+
+export class InteractionManager {
+  private canvas: HTMLCanvasElement
+  private scene: SceneGraph
+  public readonly viewport: Viewport
+
+  private state: InteractionState = {
+    mode: 'edit',
+    hoveredNode: null,
+    selectedNodes: new Set(),
+    draggedNode: null,
+    isPanning: false,
+    isDragging: false,
+  }
+
+  private lastMouseX = 0
+  private lastMouseY = 0
+  private listeners: Set<InteractionCallback> = new Set()
+
+  constructor(canvas: HTMLCanvasElement, scene: SceneGraph, viewport?: Viewport) {
+    this.canvas = canvas
+    this.scene = scene
+    this.viewport = viewport || new Viewport()
+    this.setupListeners()
+  }
+
+  public getState(): InteractionState {
+    return { ...this.state, selectedNodes: new Set(this.state.selectedNodes) }
+  }
+
+  public setMode(mode: InteractionMode) {
+    this.state.mode = mode
+    this.state.isPanning = false
+    this.state.isDragging = false
+    this.state.draggedNode = null
+  }
+
+  public on(callback: InteractionCallback) {
+    this.listeners.add(callback)
+    return () => this.listeners.delete(callback)
+  }
+
+  private setupListeners() {
+    this.canvas.addEventListener('pointerdown', this.handlePointerDown)
+    window.addEventListener('pointermove', this.handlePointerMove)
+    window.addEventListener('pointerup', this.handlePointerUp)
+    this.canvas.addEventListener('wheel', this.handleWheel, { passive: false })
+  }
+
+  public dispose() {
+    this.canvas.removeEventListener('pointerdown', this.handlePointerDown)
+    window.removeEventListener('pointermove', this.handlePointerMove)
+    window.removeEventListener('pointerup', this.handlePointerUp)
+    this.canvas.removeEventListener('wheel', this.handleWheel)
+    this.listeners.clear()
+  }
+
+  private handlePointerDown = (e: PointerEvent) => {
+    this.lastMouseX = e.clientX
+    this.lastMouseY = e.clientY
+
+    const worldPoint = this.getEventWorldPoint(e)
+
+    if (this.state.mode === 'move') {
+      this.state.isPanning = true
+      return
+    }
+
+    const hit = this.scene.hitTest(worldPoint.x, worldPoint.y)
+
+    if (hit) {
+      if (!e.shiftKey) {
+        this.state.selectedNodes.clear()
+      }
+      this.state.selectedNodes.add(hit.id)
+      this.state.isDragging = true
+      this.state.draggedNode = hit
+      this.dispatch('dragStart', hit, e, worldPoint.x, worldPoint.y)
+    } else {
+      this.state.isPanning = true
+      this.state.selectedNodes.clear()
+    }
+  }
+
+  private handlePointerMove = (e: PointerEvent) => {
+    const worldPoint = this.getEventWorldPoint(e)
+    const worldDx = (e.clientX - this.lastMouseX) / this.viewport.zoom
+    const worldDy = (e.clientY - this.lastMouseY) / this.viewport.zoom
+
+    if (this.state.isPanning) {
+      const screenDx = e.clientX - this.lastMouseX
+      const screenDy = e.clientY - this.lastMouseY
+      this.viewport.translate(screenDx, screenDy)
+    } else if (this.state.isDragging && this.state.draggedNode) {
+      const node = this.state.draggedNode
+      const currentStyle = node.style as Record<string, unknown>
+      this.scene.applyStyle(node, {
+        ...currentStyle,
+        left: ((currentStyle.left as number) || 0) + worldDx,
+        top: ((currentStyle.top as number) || 0) + worldDy,
+      })
+      this.dispatch('dragMove', node, e, worldPoint.x, worldPoint.y)
+    } else {
+      const hit = this.scene.hitTest(worldPoint.x, worldPoint.y)
+      if (hit !== this.state.hoveredNode) {
+        this.state.hoveredNode = hit
+        this.dispatch('hover', hit, e, worldPoint.x, worldPoint.y)
+      }
+    }
+
+    this.lastMouseX = e.clientX
+    this.lastMouseY = e.clientY
+  }
+
+  private handlePointerUp = (_e: PointerEvent) => {
+    this.state.isPanning = false
+    this.state.isDragging = false
+    this.state.draggedNode = null
+  }
+
+  private handleWheel = (e: WheelEvent) => {
+    e.preventDefault()
+    const canvasRect = this.canvas.getBoundingClientRect()
+
+    if (e.ctrlKey) {
+      const zoomDelta = 1 - e.deltaY * 0.01
+      this.viewport.zoomAtPoint(zoomDelta, e.clientX, e.clientY, canvasRect)
+    } else {
+      this.viewport.translate(-e.deltaX, -e.deltaY)
+    }
+
+    this.dispatch('scroll', null, e, 0, 0)
+  }
+
+  private getEventWorldPoint(e: PointerEvent) {
+    const rect = this.canvas.getBoundingClientRect()
+    return this.viewport.screenToWorld(e.clientX, e.clientY, rect)
+  }
+
+  private dispatch(
+    type: InteractionEventType,
+    node: SceneNode | null,
+    originalEvent: PointerEvent | WheelEvent,
+    worldX: number,
+    worldY: number,
+  ) {
+    const event: InteractionEvent = { type, node, originalEvent, worldX, worldY }
+    const interactionEvent = event as InteractionEvent
+    this.listeners.forEach((cb) => cb(interactionEvent))
+  }
+}
