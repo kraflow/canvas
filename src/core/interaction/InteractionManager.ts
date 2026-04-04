@@ -13,12 +13,15 @@ export class InteractionManager {
     hoveredNode: null,
     selectedNodes: new Set(),
     draggedNode: null,
+    selectionBox: null,
     isPanning: false,
     isDragging: false,
+    isBoxSelecting: false,
   }
 
   private lastMouseX = 0
   private lastMouseY = 0
+  private boxStartPoint = { x: 0, y: 0 }
   private listeners: Set<InteractionCallback> = new Set()
 
   constructor(canvas: HTMLCanvasElement, scene: SceneGraph, viewport?: Viewport) {
@@ -36,7 +39,9 @@ export class InteractionManager {
     this.state.mode = mode
     this.state.isPanning = false
     this.state.isDragging = false
+    this.state.isBoxSelecting = false
     this.state.draggedNode = null
+    this.state.selectionBox = null
   }
 
   public on(callback: InteractionCallback) {
@@ -73,16 +78,28 @@ export class InteractionManager {
     const hit = this.scene.hitTest(worldPoint.x, worldPoint.y)
 
     if (hit) {
-      if (!e.shiftKey) {
-        this.state.selectedNodes.clear()
+      if (!this.state.selectedNodes.has(hit.id)) {
+        // Not already selected -> update selection
+        if (!e.shiftKey) {
+          this.state.selectedNodes.clear()
+        }
+        this.state.selectedNodes.add(hit.id)
+      } else if (e.shiftKey) {
+        // Already selected + Shift -> toggle off
+        this.state.selectedNodes.delete(hit.id)
+        return
       }
-      this.state.selectedNodes.add(hit.id)
+
       this.state.isDragging = true
       this.state.draggedNode = hit
       this.dispatch('dragStart', hit, e, worldPoint.x, worldPoint.y)
     } else {
-      this.state.isPanning = true
-      this.state.selectedNodes.clear()
+      // Start marquee selection
+      this.state.isBoxSelecting = true
+      this.boxStartPoint = worldPoint
+      if (!e.shiftKey) {
+        this.state.selectedNodes.clear()
+      }
     }
   }
 
@@ -95,15 +112,26 @@ export class InteractionManager {
       const screenDx = e.clientX - this.lastMouseX
       const screenDy = e.clientY - this.lastMouseY
       this.viewport.translate(screenDx, screenDy)
+    } else if (this.state.isBoxSelecting) {
+      this.state.selectionBox = {
+        x: Math.min(this.boxStartPoint.x, worldPoint.x),
+        y: Math.min(this.boxStartPoint.y, worldPoint.y),
+        w: Math.abs(worldPoint.x - this.boxStartPoint.x),
+        h: Math.abs(worldPoint.y - this.boxStartPoint.y),
+      }
     } else if (this.state.isDragging && this.state.draggedNode) {
-      const node = this.state.draggedNode
-      const currentStyle = node.style as Record<string, unknown>
-      this.scene.applyStyle(node, {
-        ...currentStyle,
-        left: ((currentStyle.left as number) || 0) + worldDx,
-        top: ((currentStyle.top as number) || 0) + worldDy,
-      })
-      this.dispatch('dragMove', node, e, worldPoint.x, worldPoint.y)
+      // MOVE ALL SELECTED NODES
+      for (const id of this.state.selectedNodes) {
+        const node = this.scene.getNodeById(id)
+        if (!node) continue
+        const currentStyle = node.style as Record<string, unknown>
+        this.scene.applyStyle(node, {
+          ...currentStyle,
+          left: ((currentStyle.left as number) || 0) + worldDx,
+          top: ((currentStyle.top as number) || 0) + worldDy,
+        })
+      }
+      this.dispatch('dragMove', this.state.draggedNode, e, worldPoint.x, worldPoint.y)
     } else {
       const hit = this.scene.hitTest(worldPoint.x, worldPoint.y)
       if (hit !== this.state.hoveredNode) {
@@ -117,9 +145,15 @@ export class InteractionManager {
   }
 
   private handlePointerUp = (_e: PointerEvent) => {
+    if (this.state.isBoxSelecting && this.state.selectionBox) {
+      const hits = this.scene.boxTest(this.state.selectionBox)
+      hits.forEach((h) => this.state.selectedNodes.add(h.id))
+    }
     this.state.isPanning = false
     this.state.isDragging = false
+    this.state.isBoxSelecting = false
     this.state.draggedNode = null
+    this.state.selectionBox = null
   }
 
   private handleWheel = (e: WheelEvent) => {

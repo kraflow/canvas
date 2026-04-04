@@ -388,6 +388,71 @@ function draw(canvas: Canvas, ckRef: CanvasKit) {
   })
 
   canvas.restore()
+
+  // ── Overlays (Selection & Marquee) ──────────────────────────────────────────
+  const state = interactionManager.value?.getState()
+  const p = new ckRef.Paint()
+
+  // 1. Draw marquee selection box
+  if (state?.isBoxSelecting && state.selectionBox) {
+    const box = state.selectionBox
+    canvas.save()
+    canvas.translate(v.x, v.y)
+    canvas.scale(v.zoom, v.zoom)
+
+    // Fill (Lighter BG: 0.1 alpha)
+    p.setColor(ckRef.Color(108, 109, 254, 0.1))
+    p.setStyle(ckRef.PaintStyle.Fill)
+    canvas.drawRect(ckRef.XYWHRect(box.x, box.y, box.w, box.h), p)
+
+    // Stroke
+    p.setColor(ckRef.Color(108, 109, 254, 255))
+    p.setStyle(ckRef.PaintStyle.Stroke)
+    p.setStrokeWidth(1 / v.zoom)
+    canvas.drawRect(ckRef.XYWHRect(box.x, box.y, box.w, box.h), p)
+
+    canvas.restore()
+  }
+
+  // 2. Draw hover highlight
+  if (state?.hoveredNode && !state.selectedNodes.has(state.hoveredNode.id)) {
+    canvas.save()
+    canvas.translate(v.x, v.y)
+    canvas.scale(v.zoom, v.zoom)
+
+    p.setColor(ckRef.Color(108, 109, 254, 150)) // Lower opacity for hover
+    p.setStyle(ckRef.PaintStyle.Stroke)
+    p.setStrokeWidth(1.5 / v.zoom)
+
+    scene.walk((node, rect) => {
+      if (node.id === state.hoveredNode?.id) {
+        canvas.drawRect(ckRef.XYWHRect(rect.x, rect.y, rect.w, rect.h), p)
+      }
+    })
+
+    canvas.restore()
+  }
+
+  // 3. Draw selected node outlines
+  if (state?.selectedNodes.size) {
+    canvas.save()
+    canvas.translate(v.x, v.y)
+    canvas.scale(v.zoom, v.zoom)
+
+    p.setColor(ckRef.Color(108, 109, 254, 255))
+    p.setStyle(ckRef.PaintStyle.Stroke)
+    p.setStrokeWidth(2 / v.zoom)
+
+    scene.walk((node, rect) => {
+      if (state.selectedNodes.has(node.id)) {
+        canvas.drawRect(ckRef.XYWHRect(rect.x, rect.y, rect.w, rect.h), p)
+      }
+    })
+
+    canvas.restore()
+  }
+
+  p.delete()
 }
 
 // =============================================================================

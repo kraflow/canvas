@@ -175,6 +175,23 @@ export class SceneGraph {
     return this.screens.get(id)
   }
 
+  public getNodeById(id: string): SceneNode | undefined {
+    for (const screen of this.screens.values()) {
+      const node = this.findNodeRecursive(screen.root, id)
+      if (node) return node
+    }
+    return undefined
+  }
+
+  private findNodeRecursive(node: SceneNode, id: string): SceneNode | undefined {
+    if (node.id === id) return node
+    for (const child of node.children) {
+      const found = this.findNodeRecursive(child, id)
+      if (found) return found
+    }
+    return undefined
+  }
+
   public get allScreens(): IterableIterator<ScreenNode> {
     return this.screens.values()
   }
@@ -327,6 +344,67 @@ export class SceneGraph {
       if (hit) return hit
     }
     return null
+  }
+
+  /**
+   * Finds all SceneNodes whose absolute bounds are at least 80% covered by the selection box.
+   * Returns the "top-most" (outer-most) nodes only.
+   */
+  public boxTest(worldRect: LayoutRect): SceneNode[] {
+    const hits: SceneNode[] = []
+    // Process screens in reverse to match visual stacking
+    const screens = Array.from(this.screens.values()).reverse()
+    for (const screen of screens) {
+      this.boxTestNode(screen.root, screen.x, screen.y, worldRect, hits)
+    }
+    return hits
+  }
+
+  private boxTestNode(
+    node: SceneNode,
+    parentAbsX: number,
+    parentAbsY: number,
+    worldRect: LayoutRect,
+    results: SceneNode[],
+  ) {
+    const absRect = {
+      x: parentAbsX + node.rect.x,
+      y: parentAbsY + node.rect.y,
+      w: node.rect.w,
+      h: node.rect.h,
+    }
+
+    // 1. Check intersection ratio (80% threshold)
+    const ratio = this.getIntersectionRatio(worldRect, absRect)
+    const threshold = 0.8
+
+    // We typically don't marquee-select the screen itself, just its children.
+    if (!node.id.startsWith('root') && ratio >= threshold) {
+      results.push(node)
+      // Top-most hit found! Do not traverse deeper into children.
+      return
+    }
+
+    // 2. If parent not selected, check its children
+    let childOffX = absRect.x
+    let childOffY = absRect.y
+    if (node.scroll) {
+      childOffX -= node.scroll.x
+      childOffY -= node.scroll.y
+    }
+
+    for (const child of node.children) {
+      this.boxTestNode(child, childOffX, childOffY, worldRect, results)
+    }
+  }
+
+  private getIntersectionRatio(r1: LayoutRect, r2: LayoutRect): number {
+    const xOverlap = Math.max(0, Math.min(r1.x + r1.w, r2.x + r2.w) - Math.max(r1.x, r2.x))
+    const yOverlap = Math.max(0, Math.min(r1.y + r1.h, r2.y + r2.h) - Math.max(r1.y, r2.y))
+    const overlapArea = xOverlap * yOverlap
+    const r2Area = r2.w * r2.h
+    if (r2Area <= 0) return 0
+    return overlapArea / r2Area
   }
 
   /**
