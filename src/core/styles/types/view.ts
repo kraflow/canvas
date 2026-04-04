@@ -126,11 +126,11 @@ export interface ViewStyle extends FlexStyle, ShadowStyle {
   borderCurve?: 'circular' | 'continuous'
 
   // ── Transforms ──────────────────────────────────────────────────────────────
-  transform?: TransformFunction[] | string
+  transform?: TransformFunction[]
   transformOrigin?: string | (number | string)[]
 
   // ── Filter (New Architecture) ────────────────────────────────────────────────
-  filter?: FilterFunction[] | string
+  filter?: FilterFunction[]
 
   // ── Blend mode (New Architecture, Android 10+) ───────────────────────────────
   mixBlendMode?:

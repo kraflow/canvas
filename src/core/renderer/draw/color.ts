@@ -1,0 +1,49 @@
+import type { CanvasKit, Color } from 'canvaskit-wasm'
+import type { ColorValue } from '@/core/styles'
+
+/**
+ * Converts a ColorValue (InputColor) to a CanvasKit Color (Float32Array [r,g,b,a] in 0–1 range).
+ * Supports:
+ *  - Float32Array  → returned as-is
+ *  - number[]      → treated as [r,g,b,a] in 0–255 range
+ *  - number (int)  → 0xAARRGGBB packed color int
+ *  - string        → CSS color string parsed via CanvasKit
+ */
+export function toColor(ck: CanvasKit, value: ColorValue): Color {
+  // Already a Float32Array (CanvasKit Color)
+  if (value instanceof Float32Array) {
+    return value as Color
+  }
+
+  // Array of numbers [r, g, b, a] in 0-255
+  if (Array.isArray(value)) {
+    const [r = 0, g = 0, b = 0, a = 255] = value
+    return ck.Color(r, g, b, a / 255)
+  }
+
+  // Packed ARGB int
+  if (typeof value === 'number') {
+    const a = ((value >>> 24) & 0xff) / 255
+    const r = (value >>> 16) & 0xff
+    const g = (value >>> 8) & 0xff
+    const b = value & 0xff
+    return ck.Color(r, g, b, a)
+  }
+
+  // Uint8Array (Uint8ClampedArray, etc.)
+  if (value instanceof Uint8Array || value instanceof Uint8ClampedArray) {
+    const [r = 0, g = 0, b = 0, a = 255] = value
+    return ck.Color(r, g, b, a / 255)
+  }
+
+  // Fallback: transparent
+  return ck.Color(0, 0, 0, 0)
+}
+
+/**
+ * Converts a CanvasKit Color to [r, g, b, a] in 0–1 range for use in color matrices.
+ */
+export function colorToFloats(ck: CanvasKit, value: ColorValue): [number, number, number, number] {
+  const c = toColor(ck, value)
+  return [c[0]!, c[1]!, c[2]!, c[3]!]
+}
