@@ -170,6 +170,8 @@ export function syncStyleToYoga(_yoga: Yoga, node: YogaNode, style: FlexStyle): 
   setEdgeDimension(node, 'setPosition', Edge.Bottom, style.bottom)
   setEdgeDimension(node, 'setPosition', Edge.Left, style.left)
   setEdgeDimension(node, 'setPosition', Edge.Right, style.right)
+  setEdgeDimension(node, 'setPosition', Edge.Start, style.start)
+  setEdgeDimension(node, 'setPosition', Edge.End, style.end)
 
   // ── Margin ─────────────────────────────────────────────────────────────────
   setEdgeMargin(node, Edge.All, style.margin)
@@ -178,12 +180,40 @@ export function syncStyleToYoga(_yoga: Yoga, node: YogaNode, style: FlexStyle): 
   setEdgeMargin(node, Edge.Left, style.marginLeft)
   setEdgeMargin(node, Edge.Right, style.marginRight)
 
+  // Logical margins
+  setEdgeMargin(node, Edge.Horizontal, style.marginHorizontal)
+  setEdgeMargin(node, Edge.Vertical, style.marginVertical)
+  setEdgeMargin(node, Edge.Start, style.marginStart)
+  setEdgeMargin(node, Edge.End, style.marginEnd)
+
+  // CSS mappings
+  setEdgeMargin(node, Edge.Vertical, style.marginBlock)
+  setEdgeMargin(node, Edge.Top, style.marginBlockStart)
+  setEdgeMargin(node, Edge.Bottom, style.marginBlockEnd)
+  setEdgeMargin(node, Edge.Horizontal, style.marginInline)
+  setEdgeMargin(node, Edge.Start, style.marginInlineStart)
+  setEdgeMargin(node, Edge.End, style.marginInlineEnd)
+
   // ── Padding ────────────────────────────────────────────────────────────────
   setEdgeDimension(node, 'setPadding', Edge.All, style.padding)
   setEdgeDimension(node, 'setPadding', Edge.Top, style.paddingTop)
   setEdgeDimension(node, 'setPadding', Edge.Bottom, style.paddingBottom)
   setEdgeDimension(node, 'setPadding', Edge.Left, style.paddingLeft)
   setEdgeDimension(node, 'setPadding', Edge.Right, style.paddingRight)
+
+  // Logical paddings
+  setEdgeDimension(node, 'setPadding', Edge.Horizontal, style.paddingHorizontal)
+  setEdgeDimension(node, 'setPadding', Edge.Vertical, style.paddingVertical)
+  setEdgeDimension(node, 'setPadding', Edge.Start, style.paddingStart)
+  setEdgeDimension(node, 'setPadding', Edge.End, style.paddingEnd)
+
+  // CSS mappings
+  setEdgeDimension(node, 'setPadding', Edge.Vertical, style.paddingBlock)
+  setEdgeDimension(node, 'setPadding', Edge.Top, style.paddingBlockStart)
+  setEdgeDimension(node, 'setPadding', Edge.Bottom, style.paddingBlockEnd)
+  setEdgeDimension(node, 'setPadding', Edge.Horizontal, style.paddingInline)
+  setEdgeDimension(node, 'setPadding', Edge.Start, style.paddingInlineStart)
+  setEdgeDimension(node, 'setPadding', Edge.End, style.paddingInlineEnd)
 
   // ── Border widths (layout contribution) ───────────────────────────────────
   if (style.borderWidth !== undefined) {
@@ -200,6 +230,12 @@ export function syncStyleToYoga(_yoga: Yoga, node: YogaNode, style: FlexStyle): 
   }
   if (style.borderRightWidth !== undefined) {
     node.setBorder(Edge.Right, toNum(style.borderRightWidth))
+  }
+  if (style.borderStartWidth !== undefined) {
+    node.setBorder(Edge.Start, toNum(style.borderStartWidth))
+  }
+  if (style.borderEndWidth !== undefined) {
+    node.setBorder(Edge.End, toNum(style.borderEndWidth))
   }
 
   // ── Gap ────────────────────────────────────────────────────────────────────
