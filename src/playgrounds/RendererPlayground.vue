@@ -5,36 +5,27 @@
 </template>
 
 <script setup lang="ts">
-import type { Canvas, CanvasKit, FontMgr, Paragraph } from 'canvaskit-wasm'
+import type { Canvas, CanvasKit, Paragraph } from 'canvaskit-wasm'
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import {
   initializeCanvas,
-  resize as resizeCanvas,
   dispose as disposeCanvas,
   setAnimating,
   loadCanvasKit,
 } from '@/core/renderer'
+import { createFontSystem, type FontSystem } from '@/core/fonts'
+import { useViewport } from './useViewport'
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
-
-let fontMgr: FontMgr | null = null
+const { camera } = useViewport(canvasRef)
 let ck: CanvasKit | null = null
-
-// 🔥 Camera state
-const camera = {
-  x: 0,
-  y: 0,
-  zoom: 1,
-}
-
-// 🖱️ Interaction state
-let isDragging = false
-let lastX = 0
-let lastY = 0
 
 // 📝 Paragraph cache
 let cachedParagraph: Paragraph | null = null
 let subtitle: Paragraph | null = null
+
+// 🔤 Font system
+let fonts: FontSystem | null = null
 
 // 🎨 Draw loop
 function draw(canvas: Canvas, ck: CanvasKit) {
@@ -45,8 +36,8 @@ function draw(canvas: Canvas, ck: CanvasKit) {
   canvas.save()
 
   // ✅ Apply camera transform (DPR handled by renderer)
-  canvas.translate(camera.x, camera.y)
-  canvas.scale(camera.zoom, camera.zoom)
+  canvas.translate(camera.value.x, camera.value.y)
+  canvas.scale(camera.value.zoom, camera.value.zoom)
 
   const paint = new ck.Paint()
   paint.setAntiAlias(true)
@@ -61,153 +52,80 @@ function draw(canvas: Canvas, ck: CanvasKit) {
 
   canvas.restore()
 
-  if (cachedParagraph) canvas.drawParagraph(cachedParagraph, 100, 200)
-  if (subtitle) canvas.drawParagraph(subtitle, 104, 290)
-}
-
-// 📝 Text helper
-function createParagraph(
-  ck: CanvasKit,
-  text: string,
-  fontSize: number,
-  fontMgr: FontMgr,
-): Paragraph {
-  const textStyle = new ck.TextStyle({
-    color: ck.Color(255, 255, 255, 255),
-    fontSize,
-    fontFamilies: ['Inter'],
-  })
-
-  const paragraphStyle = new ck.ParagraphStyle({
-    textStyle, // ✅ REQUIRED
-  })
-
-  const builder = ck.ParagraphBuilder.Make(paragraphStyle, fontMgr)
-
-  builder.pushStyle(textStyle)
-  builder.addText(text)
-
-  const paragraph = builder.build()
-  paragraph.layout(1000)
-
-  builder.delete() // 🔥 important (avoid leaks)
-
-  return paragraph
-}
-
-// 🖱️ Helpers
-function screenToWorld(x: number, y: number) {
-  return {
-    x: (x - camera.x) / camera.zoom,
-    y: (y - camera.y) / camera.zoom,
+  // 📝 Draw text (synchronous)
+  if (cachedParagraph) {
+    canvas.drawParagraph(cachedParagraph, 50, 100)
   }
-}
 
-// 🖱️ Events
-function onMouseDown(e: MouseEvent) {
-  isDragging = true
-  lastX = e.clientX
-  lastY = e.clientY
-}
-
-function onMouseMove(e: MouseEvent) {
-  if (!isDragging) return
-
-  const dx = e.clientX - lastX
-  const dy = e.clientY - lastY
-
-  camera.x += dx
-  camera.y += dy
-
-  lastX = e.clientX
-  lastY = e.clientY
-}
-
-function onMouseUp() {
-  isDragging = false
-}
-
-function onWheel(e: WheelEvent) {
-  e.preventDefault()
-
-  const scale = 1.1
-  const mouseX = e.clientX
-  const mouseY = e.clientY
-
-  const before = screenToWorld(mouseX, mouseY)
-
-  const newZoom = e.deltaY < 0 ? camera.zoom * scale : camera.zoom / scale
-
-  camera.zoom = Math.max(0.1, Math.min(newZoom, 10))
-
-  const after = screenToWorld(mouseX, mouseY)
-
-  camera.x += (after.x - before.x) * camera.zoom
-  camera.y += (after.y - before.y) * camera.zoom
-}
-
-// 📏 Resize
-function handleResize() {
-  if (canvasRef.value) {
-    const container = canvasRef.value.parentElement
-    if (container) {
-      resizeCanvas(container.clientWidth, container.clientHeight)
-    }
+  if (subtitle) {
+    canvas.drawParagraph(subtitle, 50, 160)
   }
 }
 
 // 🚀 Mount
 onMounted(async () => {
-  if (!canvasRef.value) return
+  try {
+    if (!canvasRef.value) return
 
-  ck = await loadCanvasKit()
+    ck = await loadCanvasKit()
 
-  const fontData = await fetch(
-    'https://cdn.jsdelivr.net/fontsource/fonts/inter@latest/latin-400-normal.woff2',
-  ).then((res) => res.arrayBuffer())
+    fonts = await createFontSystem(ck, {
+      families: {
+        Inter: {
+          weights: [400, 700],
+          variants: {
+            '400': {
+              url: 'https://cdn.jsdelivr.net/fontsource/fonts/inter@latest/latin-400-normal.ttf',
+              priority: 'eager',
+            },
+            '700': {
+              url: 'https://cdn.jsdelivr.net/fontsource/fonts/inter@latest/latin-700-normal.ttf',
+              priority: 'lazy',
+            },
+          },
+          unicodeRanges: ['U+0000-00FF'],
+        },
+      },
+      fallbackChain: ['Inter'],
+      eagerLoad: ['Inter'],
+    })
 
-  fontMgr = ck.FontMgr.FromData(fontData)
+    // 📝 Create text once
+    const white = new Float32Array([1, 1, 1, 1])
 
-  if (!fontMgr) {
-    console.warn('FontMgr failed, falling back')
-    return
+    cachedParagraph = await fonts.makeParagraph(
+      'CanvasKit Demo by @kraflow',
+      'Inter',
+      {
+        fontSize: 48,
+        color: white,
+      },
+      1000,
+    )
+
+    subtitle = await fonts.makeParagraph(
+      'Zoom & Pan Enabled',
+      'Inter',
+      {
+        fontSize: 20,
+        color: white,
+      },
+      1000,
+    )
+
+    await initializeCanvas({
+      canvas: canvasRef.value,
+      onDraw: draw,
+    })
+
+    setAnimating(true)
+  } catch (error) {
+    console.error('[RendererPlayground] Initialization failed:', error)
   }
-
-  // 📝 Create text once
-  cachedParagraph = createParagraph(ck, 'CanvasKit Demo by @kraflow', 48, fontMgr)
-  subtitle = createParagraph(ck, 'Zoom & Pan Enabled', 20, fontMgr)
-
-  await initializeCanvas({
-    canvas: canvasRef.value,
-    onDraw: draw,
-  })
-
-  setAnimating(true)
-
-  const canvasEl = canvasRef.value
-
-  canvasEl.addEventListener('mousedown', onMouseDown)
-  window.addEventListener('mousemove', onMouseMove)
-  window.addEventListener('mouseup', onMouseUp)
-  canvasEl.addEventListener('wheel', onWheel, { passive: false })
-
-  window.addEventListener('resize', handleResize)
-  handleResize()
 })
 
 // 🧹 Cleanup
 onBeforeUnmount(() => {
-  const canvasEl = canvasRef.value
-
-  if (canvasEl) {
-    canvasEl.removeEventListener('mousedown', onMouseDown)
-    canvasEl.removeEventListener('wheel', onWheel)
-  }
-
-  window.removeEventListener('mousemove', onMouseMove)
-  window.removeEventListener('mouseup', onMouseUp)
-  window.removeEventListener('resize', handleResize)
-
   disposeCanvas()
 })
 </script>
