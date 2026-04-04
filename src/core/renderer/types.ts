@@ -6,3 +6,10 @@ export interface RendererOptions {
   fonts?: FontSystem
   onDraw?: (canvas: Canvas, ck: CanvasKit) => void
 }
+
+export interface LayoutRect {
+  x: number
+  y: number
+  w: number
+  h: number
+}
