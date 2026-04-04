@@ -3,6 +3,7 @@ import { ref, computed, defineAsyncComponent } from 'vue'
 
 const playgrounds = {
   default: defineAsyncComponent(() => import('./playgrounds/PlaygroundView.vue')),
+  renderer: defineAsyncComponent(() => import('./playgrounds/RendererPlayground.vue')),
 }
 
 type PType = keyof typeof playgrounds
