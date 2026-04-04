@@ -104,18 +104,18 @@ export interface FlexStyle {
   paddingInlineEnd?: DimensionValue
 
   // ── Border widths (layout contribution) ─────────────────────────────────────
-  borderWidth?: number | string
-  borderTopWidth?: number | string
-  borderBottomWidth?: number | string
-  borderLeftWidth?: number | string
-  borderRightWidth?: number | string
-  borderEndWidth?: number | string
-  borderStartWidth?: number | string
+  borderWidth?: number
+  borderTopWidth?: number
+  borderBottomWidth?: number
+  borderLeftWidth?: number
+  borderRightWidth?: number
+  borderEndWidth?: number
+  borderStartWidth?: number
 
   // ── Gap ─────────────────────────────────────────────────────────────────────
-  gap?: number | string
-  rowGap?: number | string
-  columnGap?: number | string
+  gap?: number
+  rowGap?: number
+  columnGap?: number
 
   // ── Display / direction / z ──────────────────────────────────────────────────
   /** Default: 'flex' */

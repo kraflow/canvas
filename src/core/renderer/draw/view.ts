@@ -125,8 +125,10 @@ export function renderView(
   }
 
   // ── 4. Outset box shadows ────────────────────────────────────────────────
-  if (style.boxShadow) {
-    drawOutsetBoxShadows(ck, canvas, style.boxShadow, rect, radii, dc)
+  const shadows = style.boxShadow
+  if (shadows) {
+    const shadowArray = Array.isArray(shadows) ? shadows : [shadows]
+    drawOutsetBoxShadows(ck, canvas, shadowArray, rect, radii, dc)
   }
 
   // ── 5. Background fill ──────────────────────────────────────────────────
@@ -146,8 +148,10 @@ export function renderView(
   drawBorders(ck, canvas, style, rect, radii, rrect, dc)
 
   // ── 7. Inset box shadows ────────────────────────────────────────────────
-  if (style.boxShadow) {
-    drawInsetBoxShadows(ck, canvas, style.boxShadow, rect, radii, rrect, dc)
+  const insetShadows = style.boxShadow
+  if (insetShadows) {
+    const shadowArray = Array.isArray(insetShadows) ? insetShadows : [insetShadows]
+    drawInsetBoxShadows(ck, canvas, shadowArray, rect, radii, rrect, dc)
   }
 
   // ── 8. Overflow clipping + scroll ────────────────────────────────────────
@@ -297,13 +301,15 @@ function resolveOriginKeyword(val: string, size: number, offset: number): number
   }
 }
 
-function parseDeg(value: string): number {
+function parseDeg(value: string | number): number {
+  if (typeof value === 'number') return value
   if (value.endsWith('rad')) return parseFloat(value) * (180 / Math.PI)
   // Assume degrees (strip 'deg' if present)
   return parseFloat(value) || 0
 }
 
-function parseRad(value: string): number {
+function parseRad(value: string | number): number {
+  if (typeof value === 'number') return value
   if (value.endsWith('rad')) return parseFloat(value)
   // Assume degrees
   const deg = parseFloat(value) || 0

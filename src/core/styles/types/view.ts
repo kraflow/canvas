@@ -36,16 +36,16 @@ export type TransformFunction =
 
 // ─── Filter types (New Architecture) ──────────────────────────────────────────
 
-export type FilterBrightness = { brightness: number | string }
-export type FilterOpacity = { opacity: number | string }
-export type FilterBlur = { blur: number | string }
-export type FilterContrast = { contrast: number | string }
-export type FilterGrayscale = { grayscale: number | string }
+export type FilterBrightness = { brightness: number }
+export type FilterOpacity = { opacity: number }
+export type FilterBlur = { blur: number }
+export type FilterContrast = { contrast: number }
+export type FilterGrayscale = { grayscale: number }
 export type FilterHueRotate = { hueRotate: string }
-export type FilterInvert = { invert: number | string }
-export type FilterSepia = { sepia: number | string }
-export type FilterSaturate = { saturate: number | string }
-export type FilterDropShadow = { dropShadow: DropShadowValue | string }
+export type FilterInvert = { invert: number }
+export type FilterSepia = { sepia: number }
+export type FilterSaturate = { saturate: number }
+export type FilterDropShadow = { dropShadow: DropShadowValue }
 
 export type FilterFunction =
   | FilterBrightness
@@ -85,10 +85,9 @@ export interface BoxShadowValue {
 
 export interface ShadowStyle {
   /**
-   * New Architecture property. Accepts an array of BoxShadowValue objects.
-   * Outset: Android 9+. Inset: Android 10+.
+   * New Architecture property. Accepts an array of BoxShadowValue objects or a single object.
    */
-  boxShadow?: BoxShadowValue[]
+  boxShadow?: BoxShadowValue | BoxShadowValue[]
 }
 
 export interface ViewStyle extends FlexStyle, ShadowStyle {
@@ -169,9 +168,9 @@ export interface ViewStyle extends FlexStyle, ShadowStyle {
 
   // ── Outline (New Architecture) ───────────────────────────────────────────────
   outlineColor?: ColorValue
-  outlineOffset?: number | string
+  outlineOffset?: number
   outlineStyle?: 'solid' | 'dotted' | 'dashed'
-  outlineWidth?: number | string
+  outlineWidth?: number
 
   // ── Pointer / cursor ────────────────────────────────────────────────────────
   /**

@@ -17,14 +17,6 @@ export interface ImageStyle extends ViewStyle {
   /** Replaces all non-transparent pixels with this color */
   tintColor?: ColorValue
 
-  // ── Android corner overlay ───────────────────────────────────────────────────
-  /**
-   * Android only.
-   * Fills the transparent corner space when using rounded borders.
-   * Set to the same color as the image's background for best results.
-   */
-  overlayColor?: ColorValue
-
   // ── Borders (narrowed subset from ViewStyle; Image accepts only these) ───────
   borderRadius?: number | string
   borderTopLeftRadius?: number | string
@@ -32,7 +24,7 @@ export interface ImageStyle extends ViewStyle {
   borderBottomLeftRadius?: number | string
   borderBottomRightRadius?: number | string
   borderColor?: ColorValue
-  borderWidth?: number | string
+  borderWidth?: number
 
   // ── Overflow ────────────────────────────────────────────────────────────────
   /** Default: 'visible' */
