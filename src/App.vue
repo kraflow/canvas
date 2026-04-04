@@ -5,6 +5,7 @@ const playgrounds = {
   default: defineAsyncComponent(() => import('./playgrounds/PlaygroundView.vue')),
   renderer: defineAsyncComponent(() => import('./playgrounds/RendererPlayground.vue')),
   demo: defineAsyncComponent(() => import('./playgrounds/ViewTextImageDemo.vue')),
+  scene: defineAsyncComponent(() => import('./playgrounds/SceneGraphDemo.vue')),
 }
 
 type PType = keyof typeof playgrounds
