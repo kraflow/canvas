@@ -1,6 +1,7 @@
 import type { Canvas, CanvasKit, Image } from 'canvaskit-wasm'
 import type { ImageStyle, ColorValue } from '@/core/styles'
 import type { LayoutRect } from '../types'
+import type { DrawContext } from './draw-context'
 import { toColor } from './color'
 import { resolveRadii, isSharpRect, makeRRect } from './path'
 import { renderView } from './view'
@@ -24,6 +25,7 @@ export function renderImage(
   style: ImageStyle,
   rect: LayoutRect,
   image: Image | null,
+  ctx?: DrawContext,
 ): void {
   if (style.display === 'none') return
 
@@ -32,7 +34,7 @@ export function renderImage(
 
   // If no image, just render the view (background, borders, etc.)
   if (!image) {
-    renderView(ck, canvas, style, rect)
+    renderView(ck, canvas, style, rect, undefined, undefined, ctx)
     return
   }
 
@@ -58,8 +60,8 @@ export function renderImage(
     const destRect = computeDestRect(fit, imgW, imgH, x, y, w, h)
 
     // ── Create paint for the image ────────────────────────────────────────
-    const paint = new ck.Paint()
-    paint.setAntiAlias(true)
+    const paint = ctx ? ctx.paint() : new ck.Paint()
+    if (!ctx) paint.setAntiAlias(true)
 
     // Apply tint color
     if (style.tintColor) {
@@ -76,9 +78,9 @@ export function renderImage(
       canvas.drawImageRect(image, srcRect, destRect, paint)
     }
 
-    paint.delete()
+    if (!ctx) paint.delete()
     canvas.restore()
-  })
+  }, ctx)
 }
 
 // =============================================================================

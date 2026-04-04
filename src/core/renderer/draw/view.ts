@@ -14,6 +14,7 @@ import type {
   ColorValue,
 } from '@/core/styles'
 import type { LayoutRect } from '../types'
+import { DrawContext } from './draw-context'
 import { toColor } from './color'
 import {
   resolveRadii,
@@ -40,7 +41,12 @@ export interface ScrollPosition {
  * 5. Borders (per-side color/width, solid/dashed/dotted)
  * 6. Inset box shadows
  * 7. Overflow clipping + scroll offset
- * 8. Outline (drawn outside the clip)
+ * 8. Child content (via drawContent callback)
+ * 9. Outline (drawn outside the clip)
+ *
+ * @param ctx  Optional DrawContext for pooled WASM resources.
+ *             When provided, Paint/MaskFilter/PathEffect objects are reused
+ *             across frames instead of being allocated and deleted per call.
  */
 export function renderView(
   ck: CanvasKit,
@@ -49,12 +55,18 @@ export function renderView(
   rect: LayoutRect,
   scroll?: ScrollPosition,
   drawContent?: () => void,
+  ctx?: DrawContext,
 ): void {
   // ── Early exit ────────────────────────────────────────────────────────────
   if (style.display === 'none') return
 
   const { x, y, w, h } = rect
   if (w <= 0 || h <= 0) return
+
+  // ── DrawContext: use provided or create a disposable one ──────────────────
+  const ownCtx = !ctx
+  const dc = ctx ?? new DrawContext(ck)
+  if (ownCtx) dc.beginFrame()
 
   // ── Resolve border radii ──────────────────────────────────────────────────
   const radii = resolveRadii(style, w, h)
@@ -72,8 +84,7 @@ export function renderView(
   const needsLayer = hasLayerEffects(style)
 
   if (needsLayer) {
-    const layerPaint = new ck.Paint()
-    layerPaint.setAntiAlias(true)
+    const layerPaint = dc.paint()
 
     // Opacity
     if (style.opacity !== undefined && style.opacity < 1) {
@@ -99,36 +110,28 @@ export function renderView(
     }
 
     canvas.saveLayer(layerPaint)
-    layerPaint.delete()
   }
 
   // ── 3. Backface visibility ───────────────────────────────────────────────
-  // If backfaceVisibility is 'hidden' and the view is back-facing, skip draw.
-  // For 2D-only transforms we can check if the transform has a negative determinant.
-  // Since we only support 2D, backface is effectively always visible unless
-  // a scale is negative. We'll check the current canvas total matrix.
   if (style.backfaceVisibility === 'hidden') {
     const ctm = canvas.getTotalMatrix()
-    // 3x3 matrix: [scaleX, skewX, transX, skewY, scaleY, transY, ?, ?, ?]
-    // Determinant of the 2x2 upper-left
     const det = ctm[0]! * ctm[4]! - ctm[1]! * ctm[3]!
     if (det < 0) {
-      // Back-facing — skip all drawing content
       if (needsLayer) canvas.restore()
       canvas.restore()
+      if (ownCtx) dc.dispose()
       return
     }
   }
 
   // ── 4. Outset box shadows ────────────────────────────────────────────────
   if (style.boxShadow) {
-    drawOutsetBoxShadows(ck, canvas, style.boxShadow, rect, radii)
+    drawOutsetBoxShadows(ck, canvas, style.boxShadow, rect, radii, dc)
   }
 
   // ── 5. Background fill ──────────────────────────────────────────────────
   if (style.backgroundColor) {
-    const bgPaint = new ck.Paint()
-    bgPaint.setAntiAlias(true)
+    const bgPaint = dc.paint()
     bgPaint.setStyle(ck.PaintStyle.Fill)
     bgPaint.setColor(toColor(ck, style.backgroundColor))
 
@@ -137,16 +140,14 @@ export function renderView(
     } else {
       canvas.drawRRect(rrect, bgPaint)
     }
-
-    bgPaint.delete()
   }
 
   // ── 6. Borders ──────────────────────────────────────────────────────────
-  drawBorders(ck, canvas, style, rect, radii, rrect)
+  drawBorders(ck, canvas, style, rect, radii, rrect, dc)
 
   // ── 7. Inset box shadows ────────────────────────────────────────────────
   if (style.boxShadow) {
-    drawInsetBoxShadows(ck, canvas, style.boxShadow, rect, radii, rrect)
+    drawInsetBoxShadows(ck, canvas, style.boxShadow, rect, radii, rrect, dc)
   }
 
   // ── 8. Overflow clipping + scroll ────────────────────────────────────────
@@ -159,6 +160,10 @@ export function renderView(
   }
 
   // Scroll offset
+  // TODO: Add iOS-style auto-hide/show scroll indicators.
+  //       Requires layout engine (yoga) to know content size vs viewport size.
+  //       The indicator should be a thin rounded track+thumb drawn on top of
+  //       clipped content, fading in on scroll start and fading out after idle.
   if (scroll && (scroll.x !== 0 || scroll.y !== 0)) {
     canvas.translate(-scroll.x, -scroll.y)
   }
@@ -175,11 +180,14 @@ export function renderView(
 
   // ── 9. Outline (drawn outside the clip) ──────────────────────────────────
   if (style.outlineWidth && style.outlineWidth > 0) {
-    drawOutline(ck, canvas, style, rect, radii)
+    drawOutline(ck, canvas, style, rect, radii, dc)
   }
 
   // ── Restore base state ────────────────────────────────────────────────────
   canvas.restore()
+
+  // ── Dispose temporary context if we created one ───────────────────────────
+  if (ownCtx) dc.dispose()
 }
 
 // =============================================================================
@@ -395,7 +403,6 @@ function buildColorFilter(
 
     if ('brightness' in f) {
       const v = resolveFilterNumber(f.brightness)
-      // Brightness: multiply RGB by v
       // prettier-ignore
       matrix = [
         v, 0, 0, 0, 0,
@@ -430,7 +437,7 @@ function buildColorFilter(
       ]
     } else if ('grayscale' in f) {
       const v = resolveFilterNumber(f.grayscale)
-      const s = 1 - v // grayscale(1) = fully gray = saturate(0)
+      const s = 1 - v
       const lr = 0.2126
       const lg = 0.7152
       const lb = 0.0722
@@ -523,6 +530,7 @@ function drawOutsetBoxShadows(
   shadows: BoxShadowValue[],
   rect: LayoutRect,
   radii: ResolvedRadii,
+  dc: DrawContext,
 ): void {
   for (const shadow of shadows) {
     if (shadow.inset) continue
@@ -532,7 +540,6 @@ function drawOutsetBoxShadows(
     const sigma = blurRadius / 2
     const color = shadow.color ? toColor(ck, shadow.color) : ck.Color(0, 0, 0, 0.5)
 
-    // Offset + spread the rect
     const shadowRect: LayoutRect = {
       x: rect.x + shadow.offsetX - spread,
       y: rect.y + shadow.offsetY - spread,
@@ -540,7 +547,6 @@ function drawOutsetBoxShadows(
       h: rect.h + spread * 2,
     }
 
-    // Scale radii by the spread expansion
     const spreadRadii: ResolvedRadii = {
       tlx: Math.max(0, radii.tlx + spread),
       tly: Math.max(0, radii.tly + spread),
@@ -554,17 +560,15 @@ function drawOutsetBoxShadows(
 
     const shadowRRect = makeRRect(ck, shadowRect, spreadRadii)
 
-    const paint = new ck.Paint()
-    paint.setAntiAlias(true)
+    const paint = dc.paint()
     paint.setColor(color)
     paint.setStyle(ck.PaintStyle.Fill)
 
     if (sigma > 0) {
-      paint.setMaskFilter(ck.MaskFilter.MakeBlur(ck.BlurStyle.Normal, sigma, true))
+      paint.setMaskFilter(dc.blurMask(sigma))
     }
 
     canvas.drawRRect(shadowRRect, paint)
-    paint.delete()
   }
 }
 
@@ -575,11 +579,11 @@ function drawInsetBoxShadows(
   rect: LayoutRect,
   radii: ResolvedRadii,
   clipRRect: InputRRect,
+  dc: DrawContext,
 ): void {
   const insetShadows = shadows.filter((s) => s.inset)
   if (insetShadows.length === 0) return
 
-  // Save + clip to the view's rrect so shadows don't bleed outside
   canvas.save()
   canvas.clipRRect(clipRRect, ck.ClipOp.Intersect, true)
 
@@ -589,9 +593,6 @@ function drawInsetBoxShadows(
     const sigma = blurRadius / 2
     const color = shadow.color ? toColor(ck, shadow.color) : ck.Color(0, 0, 0, 0.5)
 
-    // For inset shadows, we draw a large rect with a "hole" cut out of it,
-    // creating the shadow effect on the inner edges.
-    // The hole is the view rect shrunk by the spread, offset by shadow offset.
     const holeRect: LayoutRect = {
       x: rect.x + shadow.offsetX + spread,
       y: rect.y + shadow.offsetY + spread,
@@ -612,7 +613,6 @@ function drawInsetBoxShadows(
 
     const holeRRect = makeRRect(ck, holeRect, holeRadii)
 
-    // Build a path: large outer rect with the hole subtracted
     const expand = blurRadius * 2 + Math.abs(shadow.offsetX) + Math.abs(shadow.offsetY) + 100
     const outerPB = new ck.PathBuilder()
     outerPB.addRect(
@@ -628,18 +628,16 @@ function drawInsetBoxShadows(
     const outerPath = outerPB.snapshot()
     outerPB.delete()
 
-    const paint = new ck.Paint()
-    paint.setAntiAlias(true)
+    const paint = dc.paint()
     paint.setColor(color)
     paint.setStyle(ck.PaintStyle.Fill)
 
     if (sigma > 0) {
-      paint.setMaskFilter(ck.MaskFilter.MakeBlur(ck.BlurStyle.Normal, sigma, true))
+      paint.setMaskFilter(dc.blurMask(sigma))
     }
 
     canvas.drawPath(outerPath, paint)
     outerPath.delete()
-    paint.delete()
   }
 
   canvas.restore()
@@ -656,8 +654,8 @@ function drawBorders(
   rect: LayoutRect,
   radii: ResolvedRadii,
   _rrect: InputRRect,
+  dc: DrawContext,
 ): void {
-  // Resolve per-side border widths
   const bw = toNum(style.borderWidth)
   const btw = toNum(style.borderTopWidth) ?? bw ?? 0
   const brw = toNum(style.borderRightWidth) ?? bw ?? 0
@@ -666,7 +664,6 @@ function drawBorders(
 
   if (btw === 0 && brw === 0 && bbw === 0 && blw === 0) return
 
-  // Resolve per-side colors
   const baseColor = style.borderColor
   const tc = style.borderTopColor ?? baseColor
   const rc = style.borderRightColor ?? baseColor
@@ -677,23 +674,17 @@ function drawBorders(
 
   const borderStyle = style.borderStyle ?? 'solid'
 
-  // Check if we can use a single uniform stroke (all sides same width + color)
   const isUniformWidth = btw === brw && brw === bbw && bbw === blw
   const isUniformColor = tc === rc && rc === bc && bc === lc
 
   if (isUniformWidth && isUniformColor && btw > 0 && tc) {
-    // Single stroke around the rrect
-    drawUniformBorder(ck, canvas, tc, btw, borderStyle, rect, radii)
+    drawUniformBorder(ck, canvas, tc, btw, borderStyle, rect, radii, dc)
   } else {
-    // Per-side drawing
     drawPerSideBorders(
-      ck,
-      canvas,
-      rect,
-      radii,
+      ck, canvas, rect, radii,
       { top: btw, right: brw, bottom: bbw, left: blw },
       { top: tc, right: rc, bottom: bc, left: lc },
-      borderStyle,
+      borderStyle, dc,
     )
   }
 }
@@ -706,20 +697,18 @@ function drawUniformBorder(
   borderStyle: 'solid' | 'dotted' | 'dashed',
   rect: LayoutRect,
   radii: ResolvedRadii,
+  dc: DrawContext,
 ): void {
-  const paint = new ck.Paint()
-  paint.setAntiAlias(true)
+  const paint = dc.paint()
   paint.setStyle(ck.PaintStyle.Stroke)
   paint.setStrokeWidth(width)
   paint.setColor(toColor(ck, color))
 
-  // Apply dash/dot pattern
-  const effect = makeBorderPathEffect(ck, borderStyle, width)
+  const effect = dc.borderEffect(borderStyle, width)
   if (effect) {
     paint.setPathEffect(effect)
   }
 
-  // Stroke at the center of the border width — inset rect by half the border width
   const halfW = width / 2
   const strokeRect: LayoutRect = {
     x: rect.x + halfW,
@@ -741,9 +730,6 @@ function drawUniformBorder(
 
   const strokeRRect = makeRRect(ck, strokeRect, strokeRadii)
   canvas.drawRRect(strokeRRect, paint)
-
-  if (effect) effect.delete()
-  paint.delete()
 }
 
 interface SideWidths {
@@ -768,11 +754,9 @@ function drawPerSideBorders(
   widths: SideWidths,
   colors: SideColors,
   borderStyle: 'solid' | 'dotted' | 'dashed',
+  dc: DrawContext,
 ): void {
   const { x, y, w, h } = rect
-
-  // We draw each side as a filled trapezoid path (no stroke) for accurate per-side rendering.
-  // For rounded corners, we use drawDRRect (outer - inner) clipped per side.
 
   const hasRadius = !(
     radii.tlx === 0 &&
@@ -786,18 +770,10 @@ function drawPerSideBorders(
   )
 
   if (hasRadius) {
-    // For rounded borders with different per-side colors/widths:
-    // 1. Build outer rrect and inner rrect (inset by border widths)
-    // 2. For each side, clip to a triangle region and drawDRRect
     const outerRRect = makeRRect(ck, rect, radii)
     const innerRRect = makeInsetRRect(
-      ck,
-      rect,
-      radii,
-      widths.top,
-      widths.right,
-      widths.bottom,
-      widths.left,
+      ck, rect, radii,
+      widths.top, widths.right, widths.bottom, widths.left,
     )
 
     // Top side
@@ -812,12 +788,10 @@ function drawPerSideBorders(
       clipPB.delete()
       canvas.clipPath(clipPath, ck.ClipOp.Intersect, true)
 
-      const paint = new ck.Paint()
-      paint.setAntiAlias(true)
+      const paint = dc.paint()
       paint.setStyle(ck.PaintStyle.Fill)
       paint.setColor(toColor(ck, colors.top))
       canvas.drawDRRect(outerRRect, innerRRect, paint)
-      paint.delete()
       clipPath.delete()
       canvas.restore()
     }
@@ -834,12 +808,10 @@ function drawPerSideBorders(
       clipPB.delete()
       canvas.clipPath(clipPath, ck.ClipOp.Intersect, true)
 
-      const paint = new ck.Paint()
-      paint.setAntiAlias(true)
+      const paint = dc.paint()
       paint.setStyle(ck.PaintStyle.Fill)
       paint.setColor(toColor(ck, colors.right))
       canvas.drawDRRect(outerRRect, innerRRect, paint)
-      paint.delete()
       clipPath.delete()
       canvas.restore()
     }
@@ -856,12 +828,10 @@ function drawPerSideBorders(
       clipPB.delete()
       canvas.clipPath(clipPath, ck.ClipOp.Intersect, true)
 
-      const paint = new ck.Paint()
-      paint.setAntiAlias(true)
+      const paint = dc.paint()
       paint.setStyle(ck.PaintStyle.Fill)
       paint.setColor(toColor(ck, colors.bottom))
       canvas.drawDRRect(outerRRect, innerRRect, paint)
-      paint.delete()
       clipPath.delete()
       canvas.restore()
     }
@@ -878,102 +848,42 @@ function drawPerSideBorders(
       clipPB.delete()
       canvas.clipPath(clipPath, ck.ClipOp.Intersect, true)
 
-      const paint = new ck.Paint()
-      paint.setAntiAlias(true)
+      const paint = dc.paint()
       paint.setStyle(ck.PaintStyle.Fill)
       paint.setColor(toColor(ck, colors.left))
       canvas.drawDRRect(outerRRect, innerRRect, paint)
-      paint.delete()
       clipPath.delete()
       canvas.restore()
     }
   } else {
     // No border radius — simple rect lines per side
     const sides: Array<{
-      sx: number
-      sy: number
-      ex: number
-      ey: number
+      sx: number; sy: number
+      ex: number; ey: number
       width: number
       color: ColorValue | undefined
     }> = [
-      // Top
-      {
-        sx: x,
-        sy: y + widths.top / 2,
-        ex: x + w,
-        ey: y + widths.top / 2,
-        width: widths.top,
-        color: colors.top,
-      },
-      // Right
-      {
-        sx: x + w - widths.right / 2,
-        sy: y,
-        ex: x + w - widths.right / 2,
-        ey: y + h,
-        width: widths.right,
-        color: colors.right,
-      },
-      // Bottom
-      {
-        sx: x,
-        sy: y + h - widths.bottom / 2,
-        ex: x + w,
-        ey: y + h - widths.bottom / 2,
-        width: widths.bottom,
-        color: colors.bottom,
-      },
-      // Left
-      {
-        sx: x + widths.left / 2,
-        sy: y,
-        ex: x + widths.left / 2,
-        ey: y + h,
-        width: widths.left,
-        color: colors.left,
-      },
+      { sx: x, sy: y + widths.top / 2, ex: x + w, ey: y + widths.top / 2, width: widths.top, color: colors.top },
+      { sx: x + w - widths.right / 2, sy: y, ex: x + w - widths.right / 2, ey: y + h, width: widths.right, color: colors.right },
+      { sx: x, sy: y + h - widths.bottom / 2, ex: x + w, ey: y + h - widths.bottom / 2, width: widths.bottom, color: colors.bottom },
+      { sx: x + widths.left / 2, sy: y, ex: x + widths.left / 2, ey: y + h, width: widths.left, color: colors.left },
     ]
 
     for (const side of sides) {
       if (side.width <= 0 || !side.color) continue
 
-      const paint = new ck.Paint()
-      paint.setAntiAlias(true)
+      const paint = dc.paint()
       paint.setStyle(ck.PaintStyle.Stroke)
       paint.setStrokeWidth(side.width)
       paint.setColor(toColor(ck, side.color))
 
-      const effect = makeBorderPathEffect(ck, borderStyle, side.width)
+      const effect = dc.borderEffect(borderStyle, side.width)
       if (effect) {
         paint.setPathEffect(effect)
       }
 
       canvas.drawLine(side.sx, side.sy, side.ex, side.ey, paint)
-
-      if (effect) effect.delete()
-      paint.delete()
     }
-  }
-}
-
-function makeBorderPathEffect(
-  ck: CanvasKit,
-  borderStyle: 'solid' | 'dotted' | 'dashed',
-  width: number,
-): ReturnType<typeof ck.PathEffect.MakeDash> | null {
-  switch (borderStyle) {
-    case 'dashed': {
-      const dashLen = Math.max(3, width * 3)
-      const gapLen = Math.max(3, width * 1.5)
-      return ck.PathEffect.MakeDash([dashLen, gapLen])
-    }
-    case 'dotted': {
-      const dotSize = Math.max(1, width)
-      return ck.PathEffect.MakeDash([dotSize, dotSize * 2])
-    }
-    default:
-      return null
   }
 }
 
@@ -987,6 +897,7 @@ function drawOutline(
   style: ViewStyle,
   rect: LayoutRect,
   radii: ResolvedRadii,
+  dc: DrawContext,
 ): void {
   const outlineWidth = style.outlineWidth ?? 0
   if (outlineWidth <= 0) return
@@ -995,25 +906,20 @@ function drawOutline(
   const outlineColor = style.outlineColor ? toColor(ck, style.outlineColor) : ck.Color(0, 0, 0, 1)
   const outlineStyle = style.outlineStyle ?? 'solid'
 
-  // Outline is drawn outside the border edge, offset outward
   const totalOffset = outlineOffset + outlineWidth / 2
   const outlineRRect = makeOutsetRRect(ck, rect, radii, totalOffset)
 
-  const paint = new ck.Paint()
-  paint.setAntiAlias(true)
+  const paint = dc.paint()
   paint.setStyle(ck.PaintStyle.Stroke)
   paint.setStrokeWidth(outlineWidth)
   paint.setColor(outlineColor)
 
-  const effect = makeBorderPathEffect(ck, outlineStyle, outlineWidth)
+  const effect = dc.borderEffect(outlineStyle, outlineWidth)
   if (effect) {
     paint.setPathEffect(effect)
   }
 
   canvas.drawRRect(outlineRRect, paint)
-
-  if (effect) effect.delete()
-  paint.delete()
 }
 
 // =============================================================================

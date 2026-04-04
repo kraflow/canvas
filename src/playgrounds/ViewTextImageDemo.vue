@@ -14,7 +14,7 @@ import {
   loadCanvasKit,
 } from '@/core/renderer'
 import { createFontSystem, type FontSystem } from '@/core/fonts'
-import { renderView, renderText, renderImage, ImageCache } from '@/core/renderer/draw'
+import { renderView, renderText, renderImage, ImageCache, DrawContext } from '@/core/renderer/draw'
 import type { ViewStyle, TextStyle, ImageStyle } from '@/core/styles'
 import type { LayoutRect } from '@/core/renderer/types'
 import { useViewport } from './useViewport'
@@ -25,6 +25,7 @@ const { camera } = useViewport(canvasRef)
 let ck: CanvasKit | null = null
 let fonts: FontSystem | null = null
 let imageCache: ImageCache | null = null
+let drawCtx: DrawContext | null = null
 let demoImage: CKImage | null = null
 
 // =============================================================================
@@ -169,6 +170,10 @@ const scrollContentStyle: ViewStyle = {
 function draw(canvas: Canvas, ckRef: CanvasKit) {
   const time = performance.now() * 0.001
 
+  // Reset paint pool for this frame
+  drawCtx!.beginFrame()
+  const ctx = drawCtx!
+
   canvas.clear(ckRef.Color(12, 12, 14, 255))
 
   canvas.save()
@@ -177,146 +182,123 @@ function draw(canvas: Canvas, ckRef: CanvasKit) {
 
   // ── Main Card ──────────────────────────────────────────────────────────────
   const cardRect: LayoutRect = { x: 60, y: 40, w: 520, h: 640 }
-  renderView(ckRef, canvas, cardStyle, cardRect)
+  renderView(ckRef, canvas, cardStyle, cardRect, undefined, undefined, ctx)
 
   // ── Header accent bar ─────────────────────────────────────────────────────
   const headerRect: LayoutRect = { x: 80, y: 60, w: 480, h: 72 }
-  renderView(ckRef, canvas, headerViewStyle, headerRect)
+  renderView(ckRef, canvas, headerViewStyle, headerRect, undefined, undefined, ctx)
 
   // ── Label ─────────────────────────────────────────────────────────────────
-  renderText(ckRef, canvas, labelStyle, { x: 100, y: 72, w: 200, h: 20 }, 'Kraflow Canvas', fonts)
+  renderText(ckRef, canvas, labelStyle, { x: 100, y: 72, w: 200, h: 20 }, 'Kraflow Canvas', fonts, null, ctx)
 
   // ── Title ─────────────────────────────────────────────────────────────────
   renderText(
-    ckRef,
-    canvas,
-    titleStyle,
+    ckRef, canvas, titleStyle,
     { x: 100, y: 94, w: 440, h: 36 },
-    'View · Text · Image',
-    fonts,
+    'View · Text · Image', fonts, null, ctx,
   )
 
   // ── Subtitle ──────────────────────────────────────────────────────────────
   renderText(
-    ckRef,
-    canvas,
-    subtitleStyle,
+    ckRef, canvas, subtitleStyle,
     { x: 80, y: 152, w: 480, h: 20 },
-    'Unified draw pipeline — no duplicate work',
-    fonts,
+    'Unified draw pipeline — no duplicate work', fonts, null, ctx,
   )
 
   // ── Image section ─────────────────────────────────────────────────────────
   // Cover image
   const imgRect: LayoutRect = { x: 80, y: 190, w: 220, h: 150 }
-  renderImage(ckRef, canvas, imageCardStyle, imgRect, demoImage)
+  renderImage(ckRef, canvas, imageCardStyle, imgRect, demoImage, ctx)
 
   // Tinted image
   const tintRect: LayoutRect = { x: 320, y: 190, w: 240, h: 150 }
-  renderImage(ckRef, canvas, tintedImageStyle, tintRect, demoImage)
+  renderImage(ckRef, canvas, tintedImageStyle, tintRect, demoImage, ctx)
 
   // Image labels
   renderText(
-    ckRef,
-    canvas,
+    ckRef, canvas,
     { ...bodyStyle, fontSize: 12, color: Float32Array.from([0.5, 0.5, 0.53, 1]) },
     { x: 80, y: 348, w: 220, h: 16 },
-    'objectFit: cover',
-    fonts,
+    'objectFit: cover', fonts, null, ctx,
   )
   renderText(
-    ckRef,
-    canvas,
+    ckRef, canvas,
     { ...bodyStyle, fontSize: 12, color: Float32Array.from([0.5, 0.5, 0.53, 1]) },
     { x: 320, y: 348, w: 240, h: 16 },
-    'tintColor applied',
-    fonts,
+    'tintColor applied', fonts, null, ctx,
   )
 
   // ── Accent info box ───────────────────────────────────────────────────────
   const accentRect: LayoutRect = { x: 80, y: 380, w: 480, h: 72 }
-  renderView(ckRef, canvas, accentViewStyle, accentRect)
+  renderView(ckRef, canvas, accentViewStyle, accentRect, undefined, undefined, ctx)
 
   renderText(
-    ckRef,
-    canvas,
-    bodyStyle,
+    ckRef, canvas, bodyStyle,
     { x: 96, y: 392, w: 448, h: 44 },
-    'renderView handles transforms, opacity, filters, borders, shadows, and clipping. Image & text draw their content inside via the drawContent callback.',
-    fonts,
+    'DrawContext pools Paint objects across frames — zero WASM alloc/dealloc after stabilization. MaskFilters and PathEffects are cached and reused.',
+    fonts, null, ctx,
   )
 
   // ── Badges row ────────────────────────────────────────────────────────────
-  const badges = ['View', 'Text', 'Image', 'ImageCache']
+  const badges = ['View', 'Text', 'Image', 'DrawContext']
   let badgeX = 80
   for (const label of badges) {
     const bw = label.length * 8 + 24
     const bRect: LayoutRect = { x: badgeX, y: 470, w: bw, h: 28 }
-    renderView(ckRef, canvas, badgeStyle, bRect)
+    renderView(ckRef, canvas, badgeStyle, bRect, undefined, undefined, ctx)
     renderText(
-      ckRef,
-      canvas,
-      badgeTextStyle,
+      ckRef, canvas, badgeTextStyle,
       { x: badgeX + 12, y: 476, w: bw - 24, h: 16 },
-      label,
-      fonts,
+      label, fonts, null, ctx,
     )
     badgeX += bw + 10
   }
 
   // ── Outline demo ──────────────────────────────────────────────────────────
   const outlineRect: LayoutRect = { x: 80, y: 516, w: 220, h: 80 }
-  renderView(ckRef, canvas, outlineViewStyle, outlineRect)
+  renderView(ckRef, canvas, outlineViewStyle, outlineRect, undefined, undefined, ctx)
 
   renderText(
-    ckRef,
-    canvas,
+    ckRef, canvas,
     { ...bodyStyle, fontSize: 12, textAlign: 'center' },
     { x: 80, y: 544, w: 220, h: 28 },
-    'Dashed border + outline',
-    fonts,
+    'Dashed border + outline', fonts, null, ctx,
   )
 
   // ── Scroll demo (only View can scroll) ────────────────────────────────────
   const scrollY = Math.sin(time * 0.6) * 30 + 30
   const scrollRect: LayoutRect = { x: 320, y: 516, w: 240, h: 80 }
-  renderView(ckRef, canvas, scrollViewStyle, scrollRect, { x: 0, y: scrollY })
+  renderView(ckRef, canvas, scrollViewStyle, scrollRect, { x: 0, y: scrollY }, undefined, ctx)
 
   // Content taller than the scroll view
-  renderView(ckRef, canvas, scrollContentStyle, { x: 330, y: 526, w: 220, h: 40 })
+  renderView(ckRef, canvas, scrollContentStyle, { x: 330, y: 526, w: 220, h: 40 }, undefined, undefined, ctx)
   renderView(
-    ckRef,
-    canvas,
+    ckRef, canvas,
     { ...scrollContentStyle, backgroundColor: Float32Array.from([0.2, 0.78, 0.47, 0.1]) },
-    { x: 330, y: 576, w: 220, h: 40 },
+    { x: 330, y: 576, w: 220, h: 40 }, undefined, undefined, ctx,
   )
   renderView(
-    ckRef,
-    canvas,
+    ckRef, canvas,
     { ...scrollContentStyle, backgroundColor: Float32Array.from([1, 0.5, 0.2, 0.1]) },
-    { x: 330, y: 626, w: 220, h: 40 },
+    { x: 330, y: 626, w: 220, h: 40 }, undefined, undefined, ctx,
   )
 
   renderText(
-    ckRef,
-    canvas,
+    ckRef, canvas,
     { ...bodyStyle, fontSize: 12, textAlign: 'center' },
     { x: 320, y: 604, w: 240, h: 16 },
-    'Scroll (View only)',
-    fonts,
+    'Scroll (View only)', fonts, null, ctx,
   )
 
   // ── ImageCache info ───────────────────────────────────────────────────────
   const cacheInfo = imageCache
-    ? `ImageCache: ${imageCache.size} image(s) cached`
+    ? `ImageCache: ${imageCache.size} image(s) · DrawContext: ${drawCtx?.poolSize ?? 0} paints pooled`
     : 'ImageCache: not initialized'
   renderText(
-    ckRef,
-    canvas,
+    ckRef, canvas,
     { ...bodyStyle, fontSize: 11, color: Float32Array.from([0.4, 0.4, 0.43, 1]) },
     { x: 80, y: 652, w: 480, h: 16 },
-    cacheInfo,
-    fonts,
+    cacheInfo, fonts, null, ctx,
   )
 
   canvas.restore()
@@ -358,6 +340,9 @@ onMounted(async () => {
       eagerLoad: ['Inter'],
     })
 
+    // ── DrawContext (paint pool + caches) ────────────────────────────────────
+    drawCtx = new DrawContext(ck)
+
     // ── Image cache + demo image ────────────────────────────────────────────
     imageCache = new ImageCache(ck)
     demoImage = await imageCache.load(
@@ -381,6 +366,10 @@ onMounted(async () => {
 // =============================================================================
 
 onBeforeUnmount(() => {
+  if (drawCtx) {
+    drawCtx.dispose()
+    drawCtx = null
+  }
   if (imageCache) {
     imageCache.dispose()
     imageCache = null

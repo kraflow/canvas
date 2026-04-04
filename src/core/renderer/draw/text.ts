@@ -2,6 +2,7 @@ import type { Canvas, CanvasKit, Paragraph } from 'canvaskit-wasm'
 import type { TextStyle as KraflowTextStyle } from '@/core/styles'
 import type { FontSystem, ParagraphOptions } from '@/core/fonts'
 import type { LayoutRect } from '../types'
+import type { DrawContext } from './draw-context'
 import { toColor } from './color'
 import { resolveRadii, isSharpRect, makeRRect } from './path'
 import { renderView } from './view'
@@ -33,6 +34,7 @@ export function renderText(
   text: string,
   fontSystem?: FontSystem | null,
   paragraph?: Paragraph | null,
+  ctx?: DrawContext,
 ): void {
   if (style.display === 'none') return
 
@@ -41,7 +43,7 @@ export function renderText(
 
   // If no text content, just render the view (background, borders, etc.)
   if (!text || text.length === 0) {
-    renderView(ck, canvas, style, rect)
+    renderView(ck, canvas, style, rect, undefined, undefined, ctx)
     return
   }
 
@@ -80,7 +82,7 @@ export function renderText(
     }
 
     canvas.restore()
-  })
+  }, ctx)
 }
 
 /**
@@ -94,6 +96,7 @@ export async function renderTextAsync(
   rect: LayoutRect,
   text: string,
   fontSystem: FontSystem,
+  ctx?: DrawContext,
 ): Promise<void> {
   if (style.display === 'none') return
   if (!text || text.length === 0) return
@@ -101,7 +104,7 @@ export async function renderTextAsync(
   const opts = buildParagraphOptions(ck, style)
   const para = await fontSystem.makeParagraph(text, style.fontFamily ?? 'system-ui', opts, rect.w)
 
-  renderText(ck, canvas, style, rect, text, fontSystem, para)
+  renderText(ck, canvas, style, rect, text, fontSystem, para, ctx)
   para.delete()
 }
 
