@@ -7,17 +7,16 @@
 <script setup lang="ts">
 import type { Canvas, CanvasKit, Paragraph } from 'canvaskit-wasm'
 import { ref, onMounted, onBeforeUnmount } from 'vue'
-import {
-  initializeCanvas,
-  dispose as disposeCanvas,
-  setAnimating,
-  loadCanvasKit,
-} from '@/core/renderer'
+import { CanvasRenderer, loadCanvasKit } from '@/core/renderer'
 import { createFontSystem, type FontSystem } from '@/core/fonts'
 import { useViewport } from './useViewport'
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
-const { camera } = useViewport(canvasRef)
+let renderer: CanvasRenderer | null = null
+const { camera } = useViewport(canvasRef, {
+  onResize: (w, h) => renderer?.resize(w, h),
+})
+
 let ck: CanvasKit | null = null
 
 // 📝 Paragraph cache
@@ -27,7 +26,11 @@ let subtitle: Paragraph | null = null
 // 🔤 Font system
 let fonts: FontSystem | null = null
 
-// 🎨 Draw loop
+/**
+ * Performs the drawing for the playground.
+ * @param canvas - The CanvasKit canvas.
+ * @param ck - The CanvasKit instance.
+ */
 function draw(canvas: Canvas, ck: CanvasKit) {
   const time = performance.now() * 0.001
 
@@ -113,12 +116,13 @@ onMounted(async () => {
       1000,
     )
 
-    await initializeCanvas({
+    renderer = new CanvasRenderer({
       canvas: canvasRef.value,
       onDraw: draw,
     })
 
-    setAnimating(true)
+    await renderer.initialize()
+    renderer.setAnimating(true)
   } catch (error) {
     console.error('[RendererPlayground] Initialization failed:', error)
   }
@@ -126,7 +130,7 @@ onMounted(async () => {
 
 // 🧹 Cleanup
 onBeforeUnmount(() => {
-  disposeCanvas()
+  renderer?.dispose()
 })
 </script>
 

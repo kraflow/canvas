@@ -2,160 +2,161 @@ import type { Canvas, CanvasKit, Surface } from 'canvaskit-wasm'
 import type { RendererOptions } from './types'
 import { loadCanvasKit } from './load'
 
-let surface: Surface | null = null
-let canvas: HTMLCanvasElement | null = null
-let ck: CanvasKit | null = null
-
-let isAnimating = false
-let rafId: number | null = null
-let onDraw: ((canvas: Canvas, ck: CanvasKit) => void) | null = null
-
-let width = 0
-let height = 0
-
-const pixelRatio = window.devicePixelRatio || 1
-
 /**
- * Initializes the canvas renderer with the given options.
- * This function sets up the canvas element, the pixel ratio, and the CanvasKit surface.
- * It also loads the CanvasKit WASM module and creates a new CanvasKit instance.
- * @param {RendererOptions} s - The options for initializing the canvas renderer.
- * @returns {Promise<void>} - A promise that resolves when the initialization is complete.
+ * CanvasRenderer handles the initialization and rendering lifecycle of a CanvasKit-based canvas.
+ * It manages the WebGL surface, the animation loop, and provides a clean interface for drawing.
  */
-export async function initializeCanvas(s: RendererOptions): Promise<void> {
-  canvas = s.canvas
-  height = canvas.clientHeight
-  width = canvas.clientWidth
-  surface = null
-  onDraw = s.onDraw || null
+export class CanvasRenderer {
+  private surface: Surface | null = null
+  private canvas: HTMLCanvasElement | null = null
+  private ck: CanvasKit | null = null
+  private isAnimating = false
+  private rafId: number | null = null
+  private onDraw: ((canvas: Canvas, ck: CanvasKit) => void) | null = null
+  private width = 0
+  private height = 0
+  private pixelRatio = window.devicePixelRatio || 1
 
-  ck = await loadCanvasKit()
-  rebuildSurface()
-}
-
-/**
- * Rebuilds the CanvasKit surface based on the current canvas size.
- * This function must be called after the canvas size has changed.
- * If the canvas size has not changed, this function does nothing.
- * @throws {Error} if the CanvasKit surface cannot be created.
- */
-function rebuildSurface() {
-  if (!ck || !canvas) return
-
-  if (surface) {
-    surface.delete()
-    surface = null
+  /**
+   * Creates a new CanvasRenderer instance.
+   * @param options - The options for initializing the renderer.
+   */
+  constructor(options: RendererOptions) {
+    this.canvas = options.canvas
+    this.onDraw = options.onDraw || null
+    this.width = this.canvas.clientWidth
+    this.height = this.canvas.clientHeight
   }
 
-  const physicalWidth = Math.max(1, Math.round(width * pixelRatio))
-  const physicalHeight = Math.max(1, Math.round(height * pixelRatio))
-
-  canvas.width = physicalWidth
-  canvas.height = physicalHeight
-  canvas.style.width = `${width}px`
-  canvas.style.height = `${height}px`
-
-  surface = ck.MakeWebGLCanvasSurface(canvas, ck.ColorSpace.SRGB, {
-    alpha: 1,
-    antialias: 1,
-    depth: 1,
-    failIfMajorPerformanceCaveat: 0,
-    majorVersion: 2,
-    minorVersion: 0,
-    premultipliedAlpha: 1,
-    preserveDrawingBuffer: 0,
-    stencil: 8,
-  })
-
-  if (!surface) {
-    // Fallback if the webgl options failed
-    surface = ck.MakeWebGLCanvasSurface(canvas)
+  /**
+   * Initializes the renderer by loading CanvasKit and building the surface.
+   * @returns A promise that resolves when initialization is complete.
+   */
+  public async initialize(): Promise<void> {
+    this.ck = await loadCanvasKit()
+    this.rebuildSurface()
   }
 
-  if (!surface) {
-    throw new Error('[renderer] Failed to create CanvasKit WebGL surface')
-  }
-}
+  /**
+   * Rebuilds the CanvasKit surface based on the current canvas dimensions.
+   * Should be called after resizing.
+   * @private
+   */
+  private rebuildSurface(): void {
+    if (!this.ck || !this.canvas) return
 
-/**
- * Resizes the canvas to the new width and height, and rebuilds the CanvasKit surface.
- * If the new dimensions are the same as the current dimensions, this function does nothing.
- * @param newWidth - The new width of the canvas.
- * @param newHeight - The new height of the canvas.
- */
-export function resize(newWidth: number, newHeight: number) {
-  if (width === newWidth && height === newHeight) return
-  width = newWidth
-  height = newHeight
-  rebuildSurface()
-}
-
-// ---------------------------------------------------------
-// Animation loop
-// ---------------------------------------------------------
-
-/**
- * Enables or disables the animation loop. When enabled, the animation loop will call the user-provided `onDraw` function at the next available frame.
- * When disabled, the animation loop will not call the user-provided `onDraw` function until it is re-enabled.
- * @param {boolean} animating - Whether to enable or disable the animation loop.
- */
-export function setAnimating(animating: boolean) {
-  if (isAnimating === animating) return
-  isAnimating = animating
-  if (isAnimating) {
-    if (rafId === null) {
-      rafId = requestAnimationFrame(frame)
+    if (this.surface) {
+      this.surface.delete()
+      this.surface = null
     }
-  } else {
-    if (rafId !== null) {
-      cancelAnimationFrame(rafId)
-      rafId = null
+
+    const physicalWidth = Math.max(1, Math.round(this.width * this.pixelRatio))
+    const physicalHeight = Math.max(1, Math.round(this.height * this.pixelRatio))
+
+    this.canvas.width = physicalWidth
+    this.canvas.height = physicalHeight
+    this.canvas.style.width = `${this.width}px`
+    this.canvas.style.height = `${this.height}px`
+
+    this.surface = this.ck.MakeWebGLCanvasSurface(this.canvas, this.ck.ColorSpace.SRGB, {
+      alpha: 1,
+      antialias: 1,
+      depth: 1,
+      failIfMajorPerformanceCaveat: 0,
+      majorVersion: 2,
+      minorVersion: 0,
+      premultipliedAlpha: 1,
+      preserveDrawingBuffer: 0,
+      stencil: 8,
+    })
+
+    if (!this.surface) {
+      // Fallback if the webgl options failed
+      this.surface = this.ck.MakeWebGLCanvasSurface(this.canvas)
+    }
+
+    if (!this.surface) {
+      throw new Error('[CanvasRenderer] Failed to create CanvasKit WebGL surface')
     }
   }
-}
 
-function frame() {
-  if (!isAnimating) {
-    rafId = null
-    return
+  /**
+   * Resizes the renderer to new dimensions and rebuilds the surface.
+   * @param newWidth - The new width in CSS pixels.
+   * @param newHeight - The new height in CSS pixels.
+   */
+  public resize(newWidth: number, newHeight: number): void {
+    if (this.width === newWidth && this.height === newHeight) return
+    this.width = newWidth
+    this.height = newHeight
+    this.rebuildSurface()
   }
 
-  draw()
-  rafId = requestAnimationFrame(frame)
-}
+  /**
+   * Starts or stops the animation loop.
+   * @param animating - Whether the loop should be running.
+   */
+  public setAnimating(animating: boolean): void {
+    if (this.isAnimating === animating) return
+    this.isAnimating = animating
 
-function draw() {
-  if (!ck || !surface || !onDraw) return
-
-  const canvas = surface.getCanvas()
-  if (!canvas) return
-
-  // clear and run user draw code
-  canvas.clear(ck.TRANSPARENT)
-
-  canvas.save()
-  canvas.scale(pixelRatio, pixelRatio)
-
-  onDraw(canvas, ck)
-
-  canvas.restore()
-  surface.flush()
-}
-
-/**
- * Disposes of the renderer, releasing all associated resources.
- * This function should be called when the renderer is no longer needed.
- * After calling this method, the renderer should not be used and will throw errors if methods are called.
- * This will delete the CanvasKit surface, set the CanvasKit instance to null, and set the onDraw callback to null.
- * @returns {void}
- */
-export function dispose(): void {
-  setAnimating(false)
-  if (surface) {
-    surface.delete()
-    surface = null
+    if (this.isAnimating) {
+      if (this.rafId === null) {
+        this.rafId = requestAnimationFrame(this.frame.bind(this))
+      }
+    } else {
+      if (this.rafId !== null) {
+        cancelAnimationFrame(this.rafId)
+        this.rafId = null
+      }
+    }
   }
 
-  ck = null
-  onDraw = null
+  /**
+   * The animation frame callback.
+   * @private
+   */
+  private frame(): void {
+    if (!this.isAnimating) {
+      this.rafId = null
+      return
+    }
+
+    this.draw()
+    this.rafId = requestAnimationFrame(this.frame.bind(this))
+  }
+
+  /**
+   * Performs the actual drawing by clearing the canvas and calling the onDraw callback.
+   * @private
+   */
+  private draw(): void {
+    if (!this.ck || !this.surface || !this.onDraw) return
+
+    const canvas = this.surface.getCanvas()
+    if (!canvas) return
+
+    canvas.clear(this.ck.TRANSPARENT)
+    canvas.save()
+    canvas.scale(this.pixelRatio, this.pixelRatio)
+
+    this.onDraw(canvas, this.ck)
+
+    canvas.restore()
+    this.surface.flush()
+  }
+
+  /**
+   * Disposes of the renderer and releases all resources.
+   */
+  public dispose(): void {
+    this.setAnimating(false)
+    if (this.surface) {
+      this.surface.delete()
+      this.surface = null
+    }
+    this.ck = null
+    this.onDraw = null
+    this.canvas = null
+  }
 }

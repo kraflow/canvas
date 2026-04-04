@@ -9,6 +9,7 @@ Pools and caches CanvasKit WASM objects to eliminate per-frame allocation.
 ### The Problem
 
 Without pooling, every frame allocates and deletes ~26 WASM objects:
+
 - `new ck.Paint()` + `paint.delete()` for every background, shadow, border, outline
 - `ck.MaskFilter.MakeBlur()` for every shadow
 - `ck.PathEffect.MakeDash()` for every dashed/dotted border
@@ -23,11 +24,11 @@ import { DrawContext } from '@/core/renderer/draw'
 const ctx = new DrawContext(ck)
 ```
 
-| Resource | Strategy | Lifecycle |
-|----------|----------|-----------|
-| **Paint** | Pool with index reset per frame | Allocated on demand, reused forever |
-| **MaskFilter** (blur) | Cache keyed by rounded sigma | Created once per unique sigma |
-| **PathEffect** (dash/dot) | Cache keyed by `style:width` | Created once per unique config |
+| Resource                  | Strategy                        | Lifecycle                           |
+| ------------------------- | ------------------------------- | ----------------------------------- |
+| **Paint**                 | Pool with index reset per frame | Allocated on demand, reused forever |
+| **MaskFilter** (blur)     | Cache keyed by rounded sigma    | Created once per unique sigma       |
+| **PathEffect** (dash/dot) | Cache keyed by `style:width`    | Created once per unique config      |
 
 ### Usage
 
@@ -62,13 +63,13 @@ When `ctx` is omitted: creates temporary Paint objects (backward-compatible).
 ### Diagnostics
 
 ```ts
-console.log(`Pool size: ${ctx.poolSize}`)  // e.g. "Pool size: 26"
+console.log(`Pool size: ${ctx.poolSize}`) // e.g. "Pool size: 26"
 ```
 
 ### Cleanup
 
 ```ts
-ctx.dispose()  // Deletes all pooled Paints, cached MaskFilters, cached PathEffects
+ctx.dispose() // Deletes all pooled Paints, cached MaskFilters, cached PathEffects
 ```
 
 ---
@@ -103,27 +104,27 @@ const img2 = cache.loadBytes('my-icon', pngUint8Array)
 
 ```ts
 // Acquire — increments refCount, returns cached image
-const img = cache.acquire('https://example.com/photo.jpg')  // refCount: 2
+const img = cache.acquire('https://example.com/photo.jpg') // refCount: 2
 
 // Release — decrements refCount
-cache.release('https://example.com/photo.jpg')  // refCount: 1
+cache.release('https://example.com/photo.jpg') // refCount: 1
 
 // When refCount hits 0, the CanvasKit Image is .delete()'d automatically
-cache.release('https://example.com/photo.jpg')  // refCount: 0 → deleted
+cache.release('https://example.com/photo.jpg') // refCount: 0 → deleted
 ```
 
 ### Query
 
 ```ts
-cache.has('https://...')    // boolean
-cache.refCount('https://...')  // number
-cache.size                  // total cached images
+cache.has('https://...') // boolean
+cache.refCount('https://...') // number
+cache.size // total cached images
 ```
 
 ### Cleanup
 
 ```ts
-cache.dispose()  // Deletes ALL cached images, regardless of refCount
+cache.dispose() // Deletes ALL cached images, regardless of refCount
 ```
 
 ---
@@ -150,9 +151,9 @@ imageCache.dispose()
 
 ## Performance Impact
 
-| Metric | Without DrawContext | With DrawContext |
-|--------|-------------------|-----------------|
-| Paint allocs/frame | ~26 | 0 (after frame 1) |
-| MaskFilter allocs/frame | ~4 (leaked!) | 0 (cached) |
-| PathEffect allocs/frame | ~2 | 0 (cached) |
-| Total WASM ops at 60fps | ~1,920/sec | 0/sec |
+| Metric                  | Without DrawContext | With DrawContext  |
+| ----------------------- | ------------------- | ----------------- |
+| Paint allocs/frame      | ~26                 | 0 (after frame 1) |
+| MaskFilter allocs/frame | ~4 (leaked!)        | 0 (cached)        |
+| PathEffect allocs/frame | ~2                  | 0 (cached)        |
+| Total WASM ops at 60fps | ~1,920/sec          | 0/sec             |

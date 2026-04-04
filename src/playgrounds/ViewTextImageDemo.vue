@@ -7,12 +7,7 @@
 <script setup lang="ts">
 import type { Canvas, CanvasKit, Image as CKImage } from 'canvaskit-wasm'
 import { ref, onMounted, onBeforeUnmount } from 'vue'
-import {
-  initializeCanvas,
-  dispose as disposeCanvas,
-  setAnimating,
-  loadCanvasKit,
-} from '@/core/renderer'
+import { CanvasRenderer, loadCanvasKit } from '@/core/renderer'
 import { createFontSystem, type FontSystem } from '@/core/fonts'
 import { renderView, renderText, renderImage, ImageCache, DrawContext } from '@/core/renderer/draw'
 import type { ViewStyle, TextStyle, ImageStyle } from '@/core/styles'
@@ -20,7 +15,10 @@ import type { LayoutRect } from '@/core/renderer/types'
 import { useViewport } from './useViewport'
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
-const { camera } = useViewport(canvasRef)
+let renderer: CanvasRenderer | null = null
+const { camera } = useViewport(canvasRef, {
+  onResize: (w, h) => renderer?.resize(w, h),
+})
 
 let ck: CanvasKit | null = null
 let fonts: FontSystem | null = null
@@ -189,20 +187,39 @@ function draw(canvas: Canvas, ckRef: CanvasKit) {
   renderView(ckRef, canvas, headerViewStyle, headerRect, undefined, undefined, ctx)
 
   // ── Label ─────────────────────────────────────────────────────────────────
-  renderText(ckRef, canvas, labelStyle, { x: 100, y: 72, w: 200, h: 20 }, 'Kraflow Canvas', fonts, null, ctx)
+  renderText(
+    ckRef,
+    canvas,
+    labelStyle,
+    { x: 100, y: 72, w: 200, h: 20 },
+    'Kraflow Canvas',
+    fonts,
+    null,
+    ctx,
+  )
 
   // ── Title ─────────────────────────────────────────────────────────────────
   renderText(
-    ckRef, canvas, titleStyle,
+    ckRef,
+    canvas,
+    titleStyle,
     { x: 100, y: 94, w: 440, h: 36 },
-    'View · Text · Image', fonts, null, ctx,
+    'View · Text · Image',
+    fonts,
+    null,
+    ctx,
   )
 
   // ── Subtitle ──────────────────────────────────────────────────────────────
   renderText(
-    ckRef, canvas, subtitleStyle,
+    ckRef,
+    canvas,
+    subtitleStyle,
     { x: 80, y: 152, w: 480, h: 20 },
-    'Unified draw pipeline — no duplicate work', fonts, null, ctx,
+    'Unified draw pipeline — no duplicate work',
+    fonts,
+    null,
+    ctx,
   )
 
   // ── Image section ─────────────────────────────────────────────────────────
@@ -216,16 +233,24 @@ function draw(canvas: Canvas, ckRef: CanvasKit) {
 
   // Image labels
   renderText(
-    ckRef, canvas,
+    ckRef,
+    canvas,
     { ...bodyStyle, fontSize: 12, color: Float32Array.from([0.5, 0.5, 0.53, 1]) },
     { x: 80, y: 348, w: 220, h: 16 },
-    'objectFit: cover', fonts, null, ctx,
+    'objectFit: cover',
+    fonts,
+    null,
+    ctx,
   )
   renderText(
-    ckRef, canvas,
+    ckRef,
+    canvas,
     { ...bodyStyle, fontSize: 12, color: Float32Array.from([0.5, 0.5, 0.53, 1]) },
     { x: 320, y: 348, w: 240, h: 16 },
-    'tintColor applied', fonts, null, ctx,
+    'tintColor applied',
+    fonts,
+    null,
+    ctx,
   )
 
   // ── Accent info box ───────────────────────────────────────────────────────
@@ -233,10 +258,14 @@ function draw(canvas: Canvas, ckRef: CanvasKit) {
   renderView(ckRef, canvas, accentViewStyle, accentRect, undefined, undefined, ctx)
 
   renderText(
-    ckRef, canvas, bodyStyle,
+    ckRef,
+    canvas,
+    bodyStyle,
     { x: 96, y: 392, w: 448, h: 44 },
     'DrawContext pools Paint objects across frames — zero WASM alloc/dealloc after stabilization. MaskFilters and PathEffects are cached and reused.',
-    fonts, null, ctx,
+    fonts,
+    null,
+    ctx,
   )
 
   // ── Badges row ────────────────────────────────────────────────────────────
@@ -247,9 +276,14 @@ function draw(canvas: Canvas, ckRef: CanvasKit) {
     const bRect: LayoutRect = { x: badgeX, y: 470, w: bw, h: 28 }
     renderView(ckRef, canvas, badgeStyle, bRect, undefined, undefined, ctx)
     renderText(
-      ckRef, canvas, badgeTextStyle,
+      ckRef,
+      canvas,
+      badgeTextStyle,
       { x: badgeX + 12, y: 476, w: bw - 24, h: 16 },
-      label, fonts, null, ctx,
+      label,
+      fonts,
+      null,
+      ctx,
     )
     badgeX += bw + 10
   }
@@ -259,10 +293,14 @@ function draw(canvas: Canvas, ckRef: CanvasKit) {
   renderView(ckRef, canvas, outlineViewStyle, outlineRect, undefined, undefined, ctx)
 
   renderText(
-    ckRef, canvas,
+    ckRef,
+    canvas,
     { ...bodyStyle, fontSize: 12, textAlign: 'center' },
     { x: 80, y: 544, w: 220, h: 28 },
-    'Dashed border + outline', fonts, null, ctx,
+    'Dashed border + outline',
+    fonts,
+    null,
+    ctx,
   )
 
   // ── Scroll demo (only View can scroll) ────────────────────────────────────
@@ -271,23 +309,43 @@ function draw(canvas: Canvas, ckRef: CanvasKit) {
   renderView(ckRef, canvas, scrollViewStyle, scrollRect, { x: 0, y: scrollY }, undefined, ctx)
 
   // Content taller than the scroll view
-  renderView(ckRef, canvas, scrollContentStyle, { x: 330, y: 526, w: 220, h: 40 }, undefined, undefined, ctx)
   renderView(
-    ckRef, canvas,
-    { ...scrollContentStyle, backgroundColor: Float32Array.from([0.2, 0.78, 0.47, 0.1]) },
-    { x: 330, y: 576, w: 220, h: 40 }, undefined, undefined, ctx,
+    ckRef,
+    canvas,
+    scrollContentStyle,
+    { x: 330, y: 526, w: 220, h: 40 },
+    undefined,
+    undefined,
+    ctx,
   )
   renderView(
-    ckRef, canvas,
+    ckRef,
+    canvas,
+    { ...scrollContentStyle, backgroundColor: Float32Array.from([0.2, 0.78, 0.47, 0.1]) },
+    { x: 330, y: 576, w: 220, h: 40 },
+    undefined,
+    undefined,
+    ctx,
+  )
+  renderView(
+    ckRef,
+    canvas,
     { ...scrollContentStyle, backgroundColor: Float32Array.from([1, 0.5, 0.2, 0.1]) },
-    { x: 330, y: 626, w: 220, h: 40 }, undefined, undefined, ctx,
+    { x: 330, y: 626, w: 220, h: 40 },
+    undefined,
+    undefined,
+    ctx,
   )
 
   renderText(
-    ckRef, canvas,
+    ckRef,
+    canvas,
     { ...bodyStyle, fontSize: 12, textAlign: 'center' },
     { x: 320, y: 604, w: 240, h: 16 },
-    'Scroll (View only)', fonts, null, ctx,
+    'Scroll (View only)',
+    fonts,
+    null,
+    ctx,
   )
 
   // ── ImageCache info ───────────────────────────────────────────────────────
@@ -295,10 +353,14 @@ function draw(canvas: Canvas, ckRef: CanvasKit) {
     ? `ImageCache: ${imageCache.size} image(s) · DrawContext: ${drawCtx?.poolSize ?? 0} paints pooled`
     : 'ImageCache: not initialized'
   renderText(
-    ckRef, canvas,
+    ckRef,
+    canvas,
     { ...bodyStyle, fontSize: 11, color: Float32Array.from([0.4, 0.4, 0.43, 1]) },
     { x: 80, y: 652, w: 480, h: 16 },
-    cacheInfo, fonts, null, ctx,
+    cacheInfo,
+    fonts,
+    null,
+    ctx,
   )
 
   canvas.restore()
@@ -350,12 +412,13 @@ onMounted(async () => {
     )
 
     // ── Initialize canvas ───────────────────────────────────────────────────
-    await initializeCanvas({
+    renderer = new CanvasRenderer({
       canvas: canvasRef.value,
       onDraw: draw,
     })
 
-    setAnimating(true)
+    await renderer.initialize()
+    renderer.setAnimating(true)
   } catch (error) {
     console.error('[ViewTextImageDemo] Initialization failed:', error)
   }
@@ -375,7 +438,7 @@ onBeforeUnmount(() => {
     imageCache = null
   }
   demoImage = null
-  disposeCanvas()
+  renderer?.dispose()
 })
 </script>
 

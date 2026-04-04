@@ -282,10 +282,10 @@ Colors can be specified as:
 
 ```ts
 // Float32Array (recommended — zero conversion)
-Float32Array.from([1.0, 0.5, 0.0, 1.0])  // RGBA [0-1]
-
-// Number array
-[255, 128, 0, 255]
+Float32Array.from([1.0, 0.5, 0.0, 1.0])[ // RGBA [0-1]
+  // Number array
+  (255, 128, 0, 255)
+]
 
 // CanvasKit color
 ck.Color(255, 128, 0, 255)

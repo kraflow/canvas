@@ -681,10 +681,14 @@ function drawBorders(
     drawUniformBorder(ck, canvas, tc, btw, borderStyle, rect, radii, dc)
   } else {
     drawPerSideBorders(
-      ck, canvas, rect, radii,
+      ck,
+      canvas,
+      rect,
+      radii,
       { top: btw, right: brw, bottom: bbw, left: blw },
       { top: tc, right: rc, bottom: bc, left: lc },
-      borderStyle, dc,
+      borderStyle,
+      dc,
     )
   }
 }
@@ -772,8 +776,13 @@ function drawPerSideBorders(
   if (hasRadius) {
     const outerRRect = makeRRect(ck, rect, radii)
     const innerRRect = makeInsetRRect(
-      ck, rect, radii,
-      widths.top, widths.right, widths.bottom, widths.left,
+      ck,
+      rect,
+      radii,
+      widths.top,
+      widths.right,
+      widths.bottom,
+      widths.left,
     )
 
     // Top side
@@ -858,15 +867,45 @@ function drawPerSideBorders(
   } else {
     // No border radius — simple rect lines per side
     const sides: Array<{
-      sx: number; sy: number
-      ex: number; ey: number
+      sx: number
+      sy: number
+      ex: number
+      ey: number
       width: number
       color: ColorValue | undefined
     }> = [
-      { sx: x, sy: y + widths.top / 2, ex: x + w, ey: y + widths.top / 2, width: widths.top, color: colors.top },
-      { sx: x + w - widths.right / 2, sy: y, ex: x + w - widths.right / 2, ey: y + h, width: widths.right, color: colors.right },
-      { sx: x, sy: y + h - widths.bottom / 2, ex: x + w, ey: y + h - widths.bottom / 2, width: widths.bottom, color: colors.bottom },
-      { sx: x + widths.left / 2, sy: y, ex: x + widths.left / 2, ey: y + h, width: widths.left, color: colors.left },
+      {
+        sx: x,
+        sy: y + widths.top / 2,
+        ex: x + w,
+        ey: y + widths.top / 2,
+        width: widths.top,
+        color: colors.top,
+      },
+      {
+        sx: x + w - widths.right / 2,
+        sy: y,
+        ex: x + w - widths.right / 2,
+        ey: y + h,
+        width: widths.right,
+        color: colors.right,
+      },
+      {
+        sx: x,
+        sy: y + h - widths.bottom / 2,
+        ex: x + w,
+        ey: y + h - widths.bottom / 2,
+        width: widths.bottom,
+        color: colors.bottom,
+      },
+      {
+        sx: x + widths.left / 2,
+        sy: y,
+        ex: x + widths.left / 2,
+        ey: y + h,
+        width: widths.left,
+        color: colors.left,
+      },
     ]
 
     for (const side of sides) {

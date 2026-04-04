@@ -46,7 +46,7 @@ export interface FlexStyle {
   aspectRatio?: number | string
 
   // ── Box model ───────────────────────────────────────────────────────────────
-  /** Default: 'border-box' (New Architecture) */
+  /** Default: 'border-box' */
   boxSizing?: 'border-box' | 'content-box'
 
   // ── Position ────────────────────────────────────────────────────────────────
@@ -57,18 +57,9 @@ export interface FlexStyle {
   left?: DimensionValue
   right?: DimensionValue
   /** LTR=right, RTL=left */
-  //end?: DimensionValue
+  end?: DimensionValue
   /** LTR=left, RTL=right */
-  //start?: DimensionValue
-
-  // ── Logical insets (New Architecture) ───────────────────────────────────────
-  // inset?: DimensionValue
-  // insetBlock?: DimensionValue
-  // insetBlockStart?: DimensionValue
-  // insetBlockEnd?: DimensionValue
-  // insetInline?: DimensionValue
-  // insetInlineStart?: DimensionValue
-  // insetInlineEnd?: DimensionValue
+  start?: DimensionValue
 
   // ── Margin ──────────────────────────────────────────────────────────────────
   margin?: DimensionValue
@@ -76,20 +67,20 @@ export interface FlexStyle {
   marginBottom?: DimensionValue
   marginLeft?: DimensionValue
   marginRight?: DimensionValue
-  // marginHorizontal?: DimensionValue
-  // marginVertical?: DimensionValue
+  marginHorizontal?: DimensionValue
+  marginVertical?: DimensionValue
   /** LTR=marginRight, RTL=marginLeft */
-  // marginEnd?: DimensionValue
+  marginEnd?: DimensionValue
   /** LTR=marginLeft, RTL=marginRight */
-  // marginStart?: DimensionValue
+  marginStart?: DimensionValue
   /** Equivalent to marginVertical */
-  // marginBlock?: DimensionValue
-  // marginBlockStart?: DimensionValue
-  // marginBlockEnd?: DimensionValue
+  marginBlock?: DimensionValue
+  marginBlockStart?: DimensionValue
+  marginBlockEnd?: DimensionValue
   /** Equivalent to marginHorizontal */
-  // marginInline?: DimensionValue
-  // marginInlineStart?: DimensionValue
-  // marginInlineEnd?: DimensionValue
+  marginInline?: DimensionValue
+  marginInlineStart?: DimensionValue
+  marginInlineEnd?: DimensionValue
 
   // ── Padding ─────────────────────────────────────────────────────────────────
   padding?: DimensionValue
@@ -97,36 +88,34 @@ export interface FlexStyle {
   paddingBottom?: DimensionValue
   paddingLeft?: DimensionValue
   paddingRight?: DimensionValue
-  // paddingHorizontal?: DimensionValue
-  // paddingVertical?: DimensionValue
+  paddingHorizontal?: DimensionValue
+  paddingVertical?: DimensionValue
   /** LTR=paddingRight, RTL=paddingLeft */
-  // paddingEnd?: DimensionValue
+  paddingEnd?: DimensionValue
   /** LTR=paddingLeft, RTL=paddingRight */
-  // paddingStart?: DimensionValue
+  paddingStart?: DimensionValue
   /** Equivalent to paddingVertical */
-  // paddingBlock?: DimensionValue
-  // paddingBlockStart?: DimensionValue
-  // paddingBlockEnd?: DimensionValue
+  paddingBlock?: DimensionValue
+  paddingBlockStart?: DimensionValue
+  paddingBlockEnd?: DimensionValue
   /** Equivalent to paddingHorizontal */
-  // paddingInline?: DimensionValue
-  // paddingInlineStart?: DimensionValue
-  // paddingInlineEnd?: DimensionValue
+  paddingInline?: DimensionValue
+  paddingInlineStart?: DimensionValue
+  paddingInlineEnd?: DimensionValue
 
   // ── Border widths (layout contribution) ─────────────────────────────────────
-  borderWidth?: number
+  borderWidth?: number | string
   borderTopWidth?: number | string
-  borderBottomWidth?: number
-  borderLeftWidth?: number
-  borderRightWidth?: number
-  /** LTR=borderRightWidth, RTL=borderLeftWidth */
-  // borderEndWidth?: number
-  /** LTR=borderLeftWidth, RTL=borderRightWidth */
-  // borderStartWidth?: number
+  borderBottomWidth?: number | string
+  borderLeftWidth?: number | string
+  borderRightWidth?: number | string
+  borderEndWidth?: number | string
+  borderStartWidth?: number | string
 
   // ── Gap ─────────────────────────────────────────────────────────────────────
-  gap?: number
-  rowGap?: number
-  columnGap?: number
+  gap?: number | string
+  rowGap?: number | string
+  columnGap?: number | string
 
   // ── Display / direction / z ──────────────────────────────────────────────────
   /** Default: 'flex' */
@@ -136,9 +125,10 @@ export interface FlexStyle {
   zIndex?: number
 
   // ── Overflow ────────────────────────────────────────────────────────────────
+  /** Default: 'visible' */
   overflow?: 'visible' | 'hidden' | 'scroll'
 
-  // ── Stacking context (New Architecture) ─────────────────────────────────────
+  // ── Stacking context ────────────────────────────────────────────────────────
   /** Default: 'auto' */
   isolation?: 'auto' | 'isolate'
 }

@@ -34,18 +34,18 @@ export type TransformFunction =
   | SkewYTransform
   | MatrixTransform
 
-// ─── Filter types (New Architecture, RN 0.84) ─────────────────────────────────
+// ─── Filter types (New Architecture) ──────────────────────────────────────────
 
 export type FilterBrightness = { brightness: number | string }
 export type FilterOpacity = { opacity: number | string }
-export type FilterBlur = { blur: number | string } // Android-only
-export type FilterContrast = { contrast: number | string } // Android-only
-export type FilterGrayscale = { grayscale: number | string } // Android-only
-export type FilterHueRotate = { hueRotate: string } // Android-only, e.g. '90deg'
-export type FilterInvert = { invert: number | string } // Android-only
-export type FilterSepia = { sepia: number | string } // Android-only
-export type FilterSaturate = { saturate: number | string } // Android-only
-export type FilterDropShadow = { dropShadow: DropShadowValue | string } // Android 12+
+export type FilterBlur = { blur: number | string }
+export type FilterContrast = { contrast: number | string }
+export type FilterGrayscale = { grayscale: number | string }
+export type FilterHueRotate = { hueRotate: string }
+export type FilterInvert = { invert: number | string }
+export type FilterSepia = { sepia: number | string }
+export type FilterSaturate = { saturate: number | string }
+export type FilterDropShadow = { dropShadow: DropShadowValue | string }
 
 export type FilterFunction =
   | FilterBrightness
@@ -85,8 +85,8 @@ export interface BoxShadowValue {
 
 export interface ShadowStyle {
   /**
-   * New Architecture only. Outset: Android 9+. Inset: Android 10+.
-   * Accepts a BoxShadowValue array
+   * New Architecture property. Accepts an array of BoxShadowValue objects.
+   * Outset: Android 9+. Inset: Android 10+.
    */
   boxShadow?: BoxShadowValue[]
 }
@@ -108,6 +108,14 @@ export interface ViewStyle extends FlexStyle, ShadowStyle {
   borderBottomColor?: ColorValue
   borderLeftColor?: ColorValue
   borderRightColor?: ColorValue
+  /** LTR=borderRightColor, RTL=borderLeftColor */
+  borderEndColor?: ColorValue
+  /** LTR=borderLeftColor, RTL=borderRightColor */
+  borderStartColor?: ColorValue
+  /** Equivalent to borderTopColor + borderBottomColor */
+  borderBlockColor?: ColorValue
+  /** Equivalent to borderLeftColor + borderRightColor */
+  borderInlineColor?: ColorValue
 
   // ── Border radii ────────────────────────────────────────────────────────────
   borderRadius?: number | string
@@ -115,12 +123,20 @@ export interface ViewStyle extends FlexStyle, ShadowStyle {
   borderTopRightRadius?: number | string
   borderBottomLeftRadius?: number | string
   borderBottomRightRadius?: number | string
+  /** LTR=borderTopRightRadius, RTL=borderTopLeftRadius */
+  borderTopEndRadius?: number | string
+  /** LTR=borderTopLeftRadius, RTL=borderTopRightRadius */
+  borderTopStartRadius?: number | string
+  /** LTR=borderBottomRightRadius, RTL=borderBottomLeftRadius */
+  borderBottomEndRadius?: number | string
+  /** LTR=borderBottomLeftRadius, RTL=borderBottomRightRadius */
+  borderBottomStartRadius?: number | string
 
   // ── Border style ────────────────────────────────────────────────────────────
   borderStyle?: 'solid' | 'dotted' | 'dashed'
 
   /**
-   * iOS 13+ only. Controls corner smoothing.
+   * Corner smoothing (iOS 13+).
    * Default: 'circular'
    */
   borderCurve?: 'circular' | 'continuous'
@@ -153,9 +169,9 @@ export interface ViewStyle extends FlexStyle, ShadowStyle {
 
   // ── Outline (New Architecture) ───────────────────────────────────────────────
   outlineColor?: ColorValue
-  outlineOffset?: number
+  outlineOffset?: number | string
   outlineStyle?: 'solid' | 'dotted' | 'dashed'
-  outlineWidth?: number
+  outlineWidth?: number | string
 
   // ── Pointer / cursor ────────────────────────────────────────────────────────
   /**
@@ -165,7 +181,7 @@ export interface ViewStyle extends FlexStyle, ShadowStyle {
   pointerEvents?: 'auto' | 'box-none' | 'box-only' | 'none'
 
   /**
-   * iOS 17+ only. 'pointer' enables hover effects for trackpad/stylus/visionOS gaze.
+   * Host cursor (iOS 17+ visionOS gaze, stylus hover).
    * Default: 'auto'
    */
   cursor?: 'auto' | 'pointer'

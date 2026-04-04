@@ -7,12 +7,7 @@
 <script setup lang="ts">
 import type { Canvas, CanvasKit, Image as CKImage } from 'canvaskit-wasm'
 import { ref, onMounted, onBeforeUnmount } from 'vue'
-import {
-  initializeCanvas,
-  dispose as disposeCanvas,
-  setAnimating,
-  loadCanvasKit,
-} from '@/core/renderer'
+import { CanvasRenderer, loadCanvasKit } from '@/core/renderer'
 import { createFontSystem, type FontSystem } from '@/core/fonts'
 import { renderView, renderText, renderImage, ImageCache, DrawContext } from '@/core/renderer/draw'
 import type { ViewStyle, TextStyle, ImageStyle } from '@/core/styles'
@@ -20,7 +15,10 @@ import { SceneGraph, type SceneNode } from '@/core/scene'
 import { useViewport } from './useViewport'
 
 const canvasRef = ref<HTMLCanvasElement | null>(null)
-const { camera } = useViewport(canvasRef)
+let renderer: CanvasRenderer | null = null
+const { camera } = useViewport(canvasRef, {
+  onResize: (w, h) => renderer?.resize(w, h),
+})
 
 let ck: CanvasKit | null = null
 let fonts: FontSystem | null = null
@@ -241,7 +239,8 @@ function buildScene(sceneGraph: SceneGraph, img: CKImage | null): void {
 
   // Body text
   const body = sceneGraph.createNode('text', bodyTextStyle)
-  body.text = 'Each node is a plain object with an attached Yoga node. The walk() function traverses the tree and calls the renderer with absolute canvas coordinates.'
+  body.text =
+    'Each node is a plain object with an attached Yoga node. The walk() function traverses the tree and calls the renderer with absolute canvas coordinates.'
   sceneGraph.appendChild(s1.root, body)
 
   // Footer badges
@@ -353,16 +352,10 @@ function draw(canvas: Canvas, ckRef: CanvasKit) {
         renderView(ckRef, canvas, node.style as ViewStyle, rect, node.scroll, undefined, ctx)
         break
       case 'text':
-        renderText(
-          ckRef, canvas, node.style as TextStyle, rect,
-          node.text ?? '', fonts, null, ctx,
-        )
+        renderText(ckRef, canvas, node.style as TextStyle, rect, node.text ?? '', fonts, null, ctx)
         break
       case 'image':
-        renderImage(
-          ckRef, canvas, node.style as ImageStyle, rect,
-          node.image ?? null, ctx,
-        )
+        renderImage(ckRef, canvas, node.style as ImageStyle, rect, node.image ?? null, ctx)
         break
     }
   })
@@ -416,16 +409,17 @@ onMounted(async () => {
     )
 
     // ── Scene graph ─────────────────────────────────────────────────────────
-    scene = await SceneGraph.create()
+    scene = await SceneGraph.create(ck, fonts)
     buildScene(scene, demoImage)
 
     // ── Initialize canvas ───────────────────────────────────────────────────
-    await initializeCanvas({
+    renderer = new CanvasRenderer({
       canvas: canvasRef.value,
       onDraw: draw,
     })
 
-    setAnimating(true)
+    await renderer.initialize()
+    renderer.setAnimating(true)
   } catch (error) {
     console.error('[SceneGraphDemo] Initialization failed:', error)
   }
@@ -449,7 +443,7 @@ onBeforeUnmount(() => {
     imageCache = null
   }
   demoImage = null
-  disposeCanvas()
+  renderer?.dispose()
 })
 </script>
 

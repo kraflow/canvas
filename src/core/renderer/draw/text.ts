@@ -49,40 +49,48 @@ export function renderText(
 
   // Render the view with text drawing as the content callback.
   // Transforms, opacity, filters, overflow clipping are all handled by renderView.
-  renderView(ck, canvas, style, rect, undefined, () => {
-    canvas.save()
+  renderView(
+    ck,
+    canvas,
+    style,
+    rect,
+    undefined,
+    () => {
+      canvas.save()
 
-    // ── Clip to border radii for text content ──────────────────────────────
-    const radii = resolveRadii(style, w, h)
-    if (!isSharpRect(radii)) {
-      const rrect = makeRRect(ck, rect, radii)
-      canvas.clipRRect(rrect, ck.ClipOp.Intersect, true)
-    }
-
-    // ── Use provided paragraph or build one inline ────────────────────────
-    let para = paragraph ?? null
-    let paraOwned = false
-
-    if (!para && fontSystem) {
-      const opts = buildParagraphOptions(ck, style)
-      para = fontSystem.makeParagraphSync(text, style.fontFamily ?? 'system-ui', opts, w)
-      paraOwned = true
-    }
-
-    if (para) {
-      // ── Resolve vertical alignment ──────────────────────────────────────
-      const paraHeight = para.getHeight()
-      const textY = resolveVerticalAlign(style, y, h, paraHeight)
-
-      canvas.drawParagraph(para, x, textY)
-
-      if (paraOwned) {
-        para.delete()
+      // ── Clip to border radii for text content ──────────────────────────────
+      const radii = resolveRadii(style, w, h)
+      if (!isSharpRect(radii)) {
+        const rrect = makeRRect(ck, rect, radii)
+        canvas.clipRRect(rrect, ck.ClipOp.Intersect, true)
       }
-    }
 
-    canvas.restore()
-  }, ctx)
+      // ── Use provided paragraph or build one inline ────────────────────────
+      let para = paragraph ?? null
+      let paraOwned = false
+
+      if (!para && fontSystem) {
+        const opts = buildParagraphOptions(ck, style)
+        para = fontSystem.makeParagraphSync(text, style.fontFamily ?? 'system-ui', opts, w)
+        paraOwned = true
+      }
+
+      if (para) {
+        // ── Resolve vertical alignment ──────────────────────────────────────
+        const paraHeight = para.getHeight()
+        const textY = resolveVerticalAlign(style, y, h, paraHeight)
+
+        canvas.drawParagraph(para, x, textY)
+
+        if (paraOwned) {
+          para.delete()
+        }
+      }
+
+      canvas.restore()
+    },
+    ctx,
+  )
 }
 
 /**

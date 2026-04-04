@@ -8,8 +8,8 @@ const playgrounds = {
   scene: defineAsyncComponent(() => import('./playgrounds/SceneGraphDemo.vue')),
 }
 
-type PType = keyof typeof playgrounds
-const activeTab = ref<PType>('default')
+type PlaygroundType = keyof typeof playgrounds
+const activeTab = ref<PlaygroundType>('default')
 
 const activeComponent = computed(() => playgrounds[activeTab.value])
 </script>
@@ -29,7 +29,7 @@ const activeComponent = computed(() => playgrounds[activeTab.value])
           :class="['tab-btn', activeTab === name ? 'active' : '']"
           @click="activeTab = name"
         >
-          {{ name[0]!.toUpperCase() + name.slice(1) || 'Tab' }}
+          {{ name[0]?.toUpperCase() + name.slice(1) || 'Tab' }}
         </button>
       </div>
     </nav>
@@ -38,8 +38,8 @@ const activeComponent = computed(() => playgrounds[activeTab.value])
     <main class="playground-wrapper">
       <suspense>
         <template #fallback>
-          <div style="display: flex; align-items: center; justify-content: center; height: 100%">
-            <span style="color: #a1a1aa; font-size: 1.2rem">Loading...</span>
+          <div class="loading-overlay">
+            <span class="loading-text">Loading...</span>
           </div>
         </template>
         <component :is="activeComponent" />
@@ -55,6 +55,7 @@ const activeComponent = computed(() => playgrounds[activeTab.value])
 *::after {
   box-sizing: border-box;
 }
+
 body,
 html {
   margin: 0;
@@ -180,5 +181,17 @@ html {
   height: 100%;
   margin-top: 64px;
   background: #0c0c0e;
+}
+
+.loading-overlay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+}
+
+.loading-text {
+  color: #a1a1aa;
+  font-size: 1.2rem;
 }
 </style>

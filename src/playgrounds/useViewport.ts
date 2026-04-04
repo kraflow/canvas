@@ -1,7 +1,18 @@
 import { ref, onMounted, onBeforeUnmount, type Ref } from 'vue'
-import { resize as resizeCanvas } from '@/core/renderer'
 
-export function useViewport(canvasRef: Ref<HTMLCanvasElement | null>) {
+export interface ViewportOptions {
+  /** Callback invoked when the viewport is resized. */
+  onResize?: (width: number, height: number) => void
+}
+
+/**
+ * useViewport provides camera logic (pan and zoom) for a canvas element.
+ * It also handles the window resize event and notifies the caller via onResize.
+ */
+export function useViewport(
+  canvasRef: Ref<HTMLCanvasElement | null>,
+  options: ViewportOptions = {},
+) {
   // 🔥 Camera state
   const camera = ref({
     x: 0,
@@ -70,7 +81,9 @@ export function useViewport(canvasRef: Ref<HTMLCanvasElement | null>) {
     if (canvasRef.value) {
       const container = canvasRef.value.parentElement
       if (container) {
-        resizeCanvas(container.clientWidth, container.clientHeight)
+        const width = container.clientWidth
+        const height = container.clientHeight
+        options.onResize?.(width, height)
       }
     }
   }

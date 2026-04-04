@@ -14,25 +14,25 @@ const fonts = await createFontSystem(ck, {
       variants: {
         '400': {
           url: 'https://cdn.jsdelivr.net/fontsource/fonts/inter@latest/latin-400-normal.ttf',
-          priority: 'eager',    // loaded immediately
+          priority: 'eager', // loaded immediately
         },
         '600': {
           url: 'https://cdn.jsdelivr.net/fontsource/fonts/inter@latest/latin-600-normal.ttf',
-          priority: 'lazy',     // loaded when needed
+          priority: 'lazy', // loaded when needed
         },
         '700': {
           url: 'https://cdn.jsdelivr.net/fontsource/fonts/inter@latest/latin-700-normal.ttf',
           priority: 'lazy',
         },
       },
-      unicodeRanges: ['U+0000-00FF'],  // Latin characters
+      unicodeRanges: ['U+0000-00FF'], // Latin characters
     },
     NotoSansJP: {
       weights: [400],
       variants: {
         '400': {
           url: 'https://cdn.jsdelivr.net/.../noto-sans-jp-400.ttf',
-          priority: 'on-demand',  // loaded only when text needs it
+          priority: 'on-demand', // loaded only when text needs it
         },
       },
       unicodeRanges: ['U+3040-309F', 'U+30A0-30FF', 'U+4E00-9FFF'],
@@ -49,29 +49,29 @@ The manifest describes all available fonts:
 
 ```ts
 interface FontManifest {
-  families: Record<string, FontFamily>   // family name → definition
-  fallbackChain: string[]                // ordered font fallback
-  eagerLoad: string[]                    // families to load at init
+  families: Record<string, FontFamily> // family name → definition
+  fallbackChain: string[] // ordered font fallback
+  eagerLoad: string[] // families to load at init
 }
 
 interface FontFamily {
-  weights: number[]                                 // available weights
-  variants: Record<string, FontVariant>             // weight string → variant
-  unicodeRanges?: string[]                          // Unicode ranges covered
+  weights: number[] // available weights
+  variants: Record<string, FontVariant> // weight string → variant
+  unicodeRanges?: string[] // Unicode ranges covered
 }
 
 interface FontVariant {
-  url: string                              // URL to the .ttf file
+  url: string // URL to the .ttf file
   priority: 'eager' | 'lazy' | 'on-demand' // load strategy
 }
 ```
 
 **Priority levels:**
 
-| Priority | When loaded |
-|----------|-------------|
-| `eager` | During `createFontSystem()` — blocks initialization |
-| `lazy` | First time a text node requests that weight |
+| Priority    | When loaded                                                 |
+| ----------- | ----------------------------------------------------------- |
+| `eager`     | During `createFontSystem()` — blocks initialization         |
+| `lazy`      | First time a text node requests that weight                 |
 | `on-demand` | When text segmentation detects characters needing this font |
 
 ## Loading Fonts
@@ -100,11 +100,11 @@ const paragraph = await fonts.makeParagraph(
     lineHeight: 24,
     textAlign: ck.TextAlign.Left.value,
   },
-  300,  // maxWidth
+  300, // maxWidth
 )
 
 canvas.drawParagraph(paragraph, x, y)
-paragraph.delete()  // Always delete when done
+paragraph.delete() // Always delete when done
 ```
 
 ### Sync (assumes fonts are already loaded)
@@ -121,24 +121,24 @@ const paragraph = fonts.makeParagraphSync('Hello', 'Inter', opts, 300)
 interface ParagraphOptions {
   // Typography
   fontSize: number
-  color?: Float32Array                     // RGBA [0-1]
-  fontFamilies?: string[]                  // additional families
-  fontWeight?: number                      // 100-900
+  color?: Float32Array // RGBA [0-1]
+  fontFamilies?: string[] // additional families
+  fontWeight?: number // 100-900
   italic?: boolean
   letterSpacing?: number
   lineHeight?: number
-  heightMultiplier?: number                // lineHeight / fontSize
-  fontFeatures?: { name: string; value: number }[]  // e.g. 'smcp', 'tnum'
+  heightMultiplier?: number // lineHeight / fontSize
+  fontFeatures?: { name: string; value: number }[] // e.g. 'smcp', 'tnum'
 
   // Layout
-  textAlignValue?: number                  // ck.TextAlign.*.value
+  textAlignValue?: number // ck.TextAlign.*.value
   textDirectionRTL?: boolean
   textAlignVertical?: 'top' | 'center' | 'bottom'
   textTransform?: 'none' | 'uppercase' | 'lowercase' | 'capitalize'
 
   // Decoration
-  decoration?: number                      // ck.UnderlineDecoration | LineThroughDecoration
-  decorationStyle?: EmbindEnumEntity       // ck.DecorationStyle.*
+  decoration?: number // ck.UnderlineDecoration | LineThroughDecoration
+  decorationStyle?: EmbindEnumEntity // ck.DecorationStyle.*
   decorationColor?: Float32Array
 
   // Shadow
@@ -169,14 +169,14 @@ This is handled internally by `segmentText()` using the manifest's `unicodeRange
 For advanced use, the FontSystem exposes its internals:
 
 ```ts
-fonts.store      // FontStore — raw font data (ArrayBuffer) storage
-fonts.loader     // FontLoader — fetch + decode
-fonts.registry   // TypefaceRegistry — CanvasKit Typeface management
-fonts.pictures   // PictureCache — cached SkPicture objects
+fonts.store // FontStore — raw font data (ArrayBuffer) storage
+fonts.loader // FontLoader — fetch + decode
+fonts.registry // TypefaceRegistry — CanvasKit Typeface management
+fonts.pictures // PictureCache — cached SkPicture objects
 ```
 
 ## Cleanup
 
 ```ts
-fonts.dispose()  // Deletes FontMgr, clears typefaces, disposes picture cache
+fonts.dispose() // Deletes FontMgr, clears typefaces, disposes picture cache
 ```

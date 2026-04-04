@@ -4,22 +4,24 @@ The scene graph manages a tree of UI nodes with Yoga layout. It is fully **decou
 
 ## Core Concepts
 
-| Concept | Description |
-|---------|-------------|
-| **SceneGraph** | Manages multiple screens. Provides `walk()` for traversal |
+| Concept        | Description                                                                  |
+| -------------- | ---------------------------------------------------------------------------- |
+| **SceneGraph** | Manages multiple screens. Provides `walk()` for traversal                    |
 | **ScreenNode** | Root container at a custom `(x, y)` on the infinite canvas. Not Yoga-managed |
-| **SceneNode** | A node with type, style, children, and an attached Yoga node |
-| **Yoga node** | Layout engine node attached to each SceneNode. Computes position/size |
-| **rect** | Computed `{ x, y, w, h }` from Yoga's `getComputedLayout()` |
-| **walk()** | DFS traversal that yields each node with its absolute canvas rect |
+| **SceneNode**  | A node with type, style, children, and an attached Yoga node                 |
+| **Yoga node**  | Layout engine node attached to each SceneNode. Computes position/size        |
+| **rect**       | Computed `{ x, y, w, h }` from Yoga's `getComputedLayout()`                  |
+| **walk()**     | DFS traversal that yields each node with its absolute canvas rect            |
 
 ## Creating a Scene Graph
+
+Creating a `SceneGraph` requires `CanvasKit` and a `FontSystem` instance. These are used for accurate text measurement during layout.
 
 ```ts
 import { SceneGraph } from '@/core/scene'
 
-// Loads Yoga WASM — must await
-const scene = await SceneGraph.create()
+// Loads Yoga WASM and initializes measurement hooks
+const scene = await SceneGraph.create(ck, fonts)
 ```
 
 > **Important:** All yoga imports use `yoga-layout/load` (the async entry) to avoid top-level await issues with Vite.
@@ -43,6 +45,7 @@ scene.removeScreen('main')
 ```
 
 Access screens:
+
 ```ts
 const screen = scene.getScreen('main')
 
@@ -55,11 +58,11 @@ for (const screen of scene.allScreens) {
 
 ### Node Types
 
-| Type | Style | Extra Fields |
-|------|-------|-------------|
-| `'view'` | `ViewStyle` | `scroll?: ScrollPosition` |
-| `'text'` | `TextStyle` | `text?: string` |
-| `'image'` | `ImageStyle` | `image?: Image \| null` |
+| Type      | Style        | Extra Fields              |
+| --------- | ------------ | ------------------------- |
+| `'view'`  | `ViewStyle`  | `scroll?: ScrollPosition` |
+| `'text'`  | `TextStyle`  | `text?: string`           |
+| `'image'` | `ImageStyle` | `image?: Image \| null`   |
 
 ### Creating Nodes
 
@@ -95,15 +98,14 @@ scene.destroyNode(card)
 ### Setting Content
 
 ```ts
-// Text nodes
+// Text nodes (Width/Height is automatically measured if not fixed)
 const title = scene.createNode('text', {
   color: Float32Array.from([1, 1, 1, 1]),
   fontSize: 24,
   fontWeight: 700,
   fontFamily: 'Inter',
-  height: 32,  // Fixed height (text measurement is future work)
 })
-title.text = 'Hello World'
+scene.setText(title, 'Hello World')
 scene.appendChild(card, title)
 
 // Image nodes
@@ -118,12 +120,13 @@ scene.appendChild(card, img)
 
 ### Updating Styles
 
+The `applyStyle()` method is layout-aware. It only triggers a Yoga re-sync if layout properties (like `padding` or `width`) change. Updating purely visual properties (like `backgroundColor`) only triggers a redraw.
+
 ```ts
-// Updates style AND syncs layout-relevant props to Yoga
 scene.applyStyle(card, {
   ...card.style,
-  backgroundColor: Float32Array.from([0.2, 0.2, 0.25, 1]),
-  padding: 32,
+  backgroundColor: Float32Array.from([0.2, 0.2, 0.25, 1]), // Redraw only
+  padding: 32, // Re-sync Yoga + Redraw
 })
 ```
 
@@ -132,9 +135,6 @@ scene.applyStyle(card, {
 Layout is computed per-screen using Yoga's flexbox engine.
 
 ```ts
-// Compute a specific screen's layout
-scene.computeLayout(screen)
-
 // Compute all dirty screens
 scene.computeAllLayouts()
 ```
@@ -142,8 +142,10 @@ scene.computeAllLayouts()
 After computation, each node's `rect` is populated with its Yoga-computed position and size (relative to parent).
 
 **Dirty tracking:** Screens are automatically marked dirty when:
+
 - Nodes are added/removed
 - Styles are updated via `applyStyle()`
+- Text content is updated via `setText()`
 - Screen is resized via `resizeScreen()`
 
 ## Walking the Tree (Rendering)
@@ -153,8 +155,6 @@ The `walk()` function traverses all screens and nodes in DFS order, computing **
 ```ts
 scene.walk((node, absoluteRect) => {
   // absoluteRect = { x, y, w, h } in canvas coordinates
-  // node.type = 'view' | 'text' | 'image'
-  // node.style, node.text, node.image, node.scroll, etc.
 })
 ```
 
@@ -192,24 +192,24 @@ scene.walkScreen(screen, (node, rect) => {
 
 The `syncStyleToYoga()` function maps all `FlexStyle` properties to Yoga node setters:
 
-| Style Property | Yoga Setter |
-|---------------|-------------|
-| `flexDirection` | `setFlexDirection()` |
-| `flexWrap` | `setFlexWrap()` |
-| `justifyContent` | `setJustifyContent()` |
-| `alignItems` / `alignContent` / `alignSelf` | `setAlignItems()` / etc. |
-| `flex` / `flexGrow` / `flexShrink` / `flexBasis` | `setFlex()` / etc. |
-| `width` / `height` | `setWidth()` / `setHeight()` (supports `number`, `'auto'`, `'50%'`) |
-| `minWidth` / `maxWidth` / `minHeight` / `maxHeight` | corresponding setters |
-| `padding` / `paddingTop` / etc. | `setPadding(edge, value)` |
-| `margin` / `marginTop` / etc. | `setMargin(edge, value)` (supports `'auto'`) |
-| `position` / `top` / `bottom` / `left` / `right` | `setPositionType()` / `setPosition()` |
-| `borderWidth` / `borderTopWidth` / etc. | `setBorder(edge, value)` |
-| `gap` / `rowGap` / `columnGap` | `setGap(gutter, value)` |
-| `display` | `setDisplay()` |
-| `overflow` | `setOverflow()` |
-| `aspectRatio` | `setAspectRatio()` (supports `'16/9'` string) |
-| `boxSizing` | `setBoxSizing()` |
+| Style Property                                      | Yoga Setter                                                         |
+| --------------------------------------------------- | ------------------------------------------------------------------- |
+| `flexDirection`                                     | `setFlexDirection()`                                                |
+| `flexWrap`                                          | `setFlexWrap()`                                                     |
+| `justifyContent`                                    | `setJustifyContent()`                                               |
+| `alignItems` / `alignContent` / `alignSelf`         | `setAlignItems()` / etc.                                            |
+| `flex` / `flexGrow` / `flexShrink` / `flexBasis`    | `setFlex()` / etc.                                                  |
+| `width` / `height`                                  | `setWidth()` / `setHeight()` (supports `number`, `'auto'`, `'50%'`) |
+| `minWidth` / `maxWidth` / `minHeight` / `maxHeight` | corresponding setters                                               |
+| `padding` / `paddingTop` / etc.                     | `setPadding(edge, value)`                                           |
+| `margin` / `marginTop` / etc.                       | `setMargin(edge, value)` (supports `'auto'`)                        |
+| `position` / `top` / `bottom` / `left` / `right`    | `setPositionType()` / `setPosition()`                               |
+| `borderWidth` / `borderTopWidth` / etc.             | `setBorder(edge, value)`                                            |
+| `gap` / `rowGap` / `columnGap`                      | `setGap(gutter, value)`                                             |
+| `display`                                           | `setDisplay()`                                                      |
+| `overflow`                                          | `setOverflow()`                                                     |
+| `aspectRatio`                                       | `setAspectRatio()` (supports `'16/9'` string)                       |
+| `boxSizing`                                         | `setBoxSizing()`                                                    |
 
 ## Cleanup
 
@@ -220,9 +220,8 @@ scene.dispose()
 
 ## Limitations (Current)
 
-| Feature | Status |
-|---------|--------|
-| Text measurement (`measureFunc`) | Not yet — use fixed `height` on text nodes |
-| zIndex draw ordering | Not yet — DFS tree order only |
+| Feature           | Status                         |
+| ----------------- | ------------------------------ |
+| zIndex            | Not yet — DFS tree order only  |
 | Event hit testing | Not yet — planned reverse-walk |
-| Scroll indicators | Not yet — `scroll` offset is supported via `renderView` |
+| Scroll indicators | Not yet                        |

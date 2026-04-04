@@ -23,16 +23,16 @@ export interface ImageStyle extends ViewStyle {
    * Fills the transparent corner space when using rounded borders.
    * Set to the same color as the image's background for best results.
    */
-  overlayColor?: string
+  overlayColor?: ColorValue
 
   // ── Borders (narrowed subset from ViewStyle; Image accepts only these) ───────
-  borderRadius?: number
-  borderTopLeftRadius?: number
-  borderTopRightRadius?: number
-  borderBottomLeftRadius?: number
-  borderBottomRightRadius?: number
+  borderRadius?: number | string
+  borderTopLeftRadius?: number | string
+  borderTopRightRadius?: number | string
+  borderBottomLeftRadius?: number | string
+  borderBottomRightRadius?: number | string
   borderColor?: ColorValue
-  borderWidth?: number
+  borderWidth?: number | string
 
   // ── Overflow ────────────────────────────────────────────────────────────────
   /** Default: 'visible' */

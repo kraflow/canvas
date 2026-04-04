@@ -111,7 +111,13 @@ export function syncStyleToYoga(_yoga: Yoga, node: YogaNode, style: FlexStyle): 
   if (style.flexShrink !== undefined) node.setFlexShrink(style.flexShrink)
 
   if (style.flexBasis !== undefined) {
-    setDimensionAuto(node, 'setFlexBasis', 'setFlexBasisPercent', 'setFlexBasisAuto', style.flexBasis)
+    setDimensionAuto(
+      node,
+      'setFlexBasis',
+      'setFlexBasisPercent',
+      'setFlexBasisAuto',
+      style.flexBasis,
+    )
   }
 
   // ── Sizing ─────────────────────────────────────────────────────────────────
@@ -136,9 +142,10 @@ export function syncStyleToYoga(_yoga: Yoga, node: YogaNode, style: FlexStyle): 
 
   // ── Aspect ratio ──────────────────────────────────────────────────────────
   if (style.aspectRatio !== undefined) {
-    const ratio = typeof style.aspectRatio === 'string'
-      ? parseAspectRatio(style.aspectRatio)
-      : style.aspectRatio
+    const ratio =
+      typeof style.aspectRatio === 'string'
+        ? parseAspectRatio(style.aspectRatio)
+        : style.aspectRatio
     node.setAspectRatio(ratio)
   }
 
@@ -261,7 +268,11 @@ function setDimensionAuto(
 function setDimension(
   node: YogaNode,
   pointFn: 'setMinWidth' | 'setMaxWidth' | 'setMinHeight' | 'setMaxHeight',
-  percentFn: 'setMinWidthPercent' | 'setMaxWidthPercent' | 'setMinHeightPercent' | 'setMaxHeightPercent',
+  percentFn:
+    | 'setMinWidthPercent'
+    | 'setMaxWidthPercent'
+    | 'setMinHeightPercent'
+    | 'setMaxHeightPercent',
   value: DimensionValue,
 ): void {
   if (value === null || value === undefined) return

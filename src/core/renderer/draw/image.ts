@@ -40,47 +40,55 @@ export function renderImage(
 
   // Render the view with image drawing as the content callback.
   // Transforms, opacity, filters, overflow clipping are all handled by renderView.
-  renderView(ck, canvas, style, rect, undefined, () => {
-    canvas.save()
+  renderView(
+    ck,
+    canvas,
+    style,
+    rect,
+    undefined,
+    () => {
+      canvas.save()
 
-    // ── Clip to border radii for image content ─────────────────────────────
-    // Images should always clip to border radii, even if overflow isn't 'hidden'.
-    const radii = resolveRadii(style, w, h)
-    if (!isSharpRect(radii)) {
-      const rrect = makeRRect(ck, rect, radii)
-      canvas.clipRRect(rrect, ck.ClipOp.Intersect, true)
-    }
-
-    // ── Calculate source/dest rects based on resizeMode/objectFit ──────────
-    const imgW = image.width()
-    const imgH = image.height()
-    const srcRect = Float32Array.from([0, 0, imgW, imgH])
-
-    const fit = resolveObjectFit(style)
-    const destRect = computeDestRect(fit, imgW, imgH, x, y, w, h)
-
-    // ── Create paint for the image ────────────────────────────────────────
-    const paint = ctx ? ctx.paint() : new ck.Paint()
-    if (!ctx) paint.setAntiAlias(true)
-
-    // Apply tint color
-    if (style.tintColor) {
-      const tintCF = makeTintColorFilter(ck, style.tintColor)
-      if (tintCF) {
-        paint.setColorFilter(tintCF)
+      // ── Clip to border radii for image content ─────────────────────────────
+      // Images should always clip to border radii, even if overflow isn't 'hidden'.
+      const radii = resolveRadii(style, w, h)
+      if (!isSharpRect(radii)) {
+        const rrect = makeRRect(ck, rect, radii)
+        canvas.clipRRect(rrect, ck.ClipOp.Intersect, true)
       }
-    }
 
-    // ── Handle repeat mode ────────────────────────────────────────────────
-    if (fit === 'repeat') {
-      drawRepeatedImage(ck, canvas, image, paint, x, y, w, h)
-    } else {
-      canvas.drawImageRect(image, srcRect, destRect, paint)
-    }
+      // ── Calculate source/dest rects based on resizeMode/objectFit ──────────
+      const imgW = image.width()
+      const imgH = image.height()
+      const srcRect = Float32Array.from([0, 0, imgW, imgH])
 
-    if (!ctx) paint.delete()
-    canvas.restore()
-  }, ctx)
+      const fit = resolveObjectFit(style)
+      const destRect = computeDestRect(fit, imgW, imgH, x, y, w, h)
+
+      // ── Create paint for the image ────────────────────────────────────────
+      const paint = ctx ? ctx.paint() : new ck.Paint()
+      if (!ctx) paint.setAntiAlias(true)
+
+      // Apply tint color
+      if (style.tintColor) {
+        const tintCF = makeTintColorFilter(ck, style.tintColor)
+        if (tintCF) {
+          paint.setColorFilter(tintCF)
+        }
+      }
+
+      // ── Handle repeat mode ────────────────────────────────────────────────
+      if (fit === 'repeat') {
+        drawRepeatedImage(ck, canvas, image, paint, x, y, w, h)
+      } else {
+        canvas.drawImageRect(image, srcRect, destRect, paint)
+      }
+
+      if (!ctx) paint.delete()
+      canvas.restore()
+    },
+    ctx,
+  )
 }
 
 // =============================================================================
