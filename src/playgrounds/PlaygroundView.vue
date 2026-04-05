@@ -123,11 +123,11 @@ const addNode = (type: 'view' | 'text' | 'image') => {
 
   const newNode = scene.value.createNode(type, {
     backgroundColor: type === 'view' ? COLORS.VIEW.bg : undefined,
-    width: parent.rect.w - DEFAULT_NODE_SPACING * 2,
+    // width: parent.rect.w - DEFAULT_NODE_SPACING * 2,
     height: 50,
-    margin: DEFAULT_NODE_SPACING,
-    padding: DEFAULT_NODE_PADDING,
-    borderRadius: DEFAULT_NODE_RADIUS,
+    // margin: DEFAULT_NODE_SPACING,
+    // padding: DEFAULT_NODE_PADDING,
+    // borderRadius: DEFAULT_NODE_RADIUS,
     borderWidth: 1.5,
     borderColor:
       type === 'view'
@@ -469,9 +469,9 @@ const canvasCursor = computed(() => {
       <div class="zoom-tools">
         <button
           @click="
-            viewport.setZoom(viewport.zoom * 0.9);
-            zoomLevel = Math.round(viewport.zoom * 100);
-            renderer?.requestFrame();
+            (viewport.setZoom(viewport.zoom * 0.9),
+            (zoomLevel = Math.round(viewport.zoom * 100)),
+            renderer?.requestFrame())
           "
         >
           -
@@ -479,9 +479,9 @@ const canvasCursor = computed(() => {
         <span class="zoom-level">{{ zoomLevel }}%</span>
         <button
           @click="
-            viewport.setZoom(viewport.zoom * 1.1);
-            zoomLevel = Math.round(viewport.zoom * 100);
-            renderer?.requestFrame();
+            (viewport.setZoom(viewport.zoom * 1.1),
+            (zoomLevel = Math.round(viewport.zoom * 100)),
+            renderer?.requestFrame())
           "
         >
           +

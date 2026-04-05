@@ -95,7 +95,7 @@ export class SceneGraph {
   private readonly imageCache: ImageCache
   private readonly screens = new Map<string, ScreenNode>()
   private readonly nodes = new Map<string, SceneNode>()
-  private readonly spatialIndex = new SpatialIndex()
+  public readonly spatialIndex = new SpatialIndex()
   public readonly drawContext: DrawContext
   private _revision = 0
   private nextId = 1

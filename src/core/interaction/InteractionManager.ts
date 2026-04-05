@@ -29,7 +29,14 @@ export class InteractionManager {
   private lastMouseX = 0
   private lastMouseY = 0
   private boxStartPoint = { x: 0, y: 0 }
-  private dragStartStates = new Map<string, { x: number; y: number; parentId?: string; style?: unknown }>()
+  private dragStartStates = new Map<string, { 
+    initialX: number; 
+    initialY: number; 
+    grabOffsetX: number; 
+    grabOffsetY: number; 
+    parentId?: string; 
+    style?: unknown 
+  }>()
   private listeners: Set<InteractionCallback> = new Set()
   private originalMode: InteractionMode | null = null
   private overlayManager: InteractionOverlayManager | null = null
@@ -109,14 +116,21 @@ export class InteractionManager {
     const hit = this.scene.hitTest(worldPoint.x, worldPoint.y)
 
     if (hit) {
-      if (!this.state.selectedNodes.has(hit.id)) {
+      let targetId = hit.id
+      
+      // If we hit a root node, prefer its screen
+      for (const s of this.scene.allScreens) {
+        if (s.root.id === hit.id) {
+          targetId = s.id
+          break
+        }
+      }
+
+      if (!this.state.selectedNodes.has(targetId)) {
         if (!e.shiftKey) this.state.selectedNodes.clear()
-        
-        // If hit is a node, prefer its screen if selecting screens?
-        // Actually, just add the hit node.
-        this.state.selectedNodes.add(hit.id)
+        this.state.selectedNodes.add(targetId)
       } else if (e.shiftKey) {
-        this.state.selectedNodes.delete(hit.id)
+        this.state.selectedNodes.delete(targetId)
         return
       }
 
@@ -128,13 +142,25 @@ export class InteractionManager {
       for (const id of this.state.selectedNodes) {
         const screen = this.scene.getScreen(id)
         if (screen) {
-          this.dragStartStates.set(id, { x: screen.x, y: screen.y })
+          const gX = worldPoint.x - screen.x
+          const gY = worldPoint.y - screen.y
+          this.dragStartStates.set(id, { 
+            initialX: screen.x, 
+            initialY: screen.y,
+            grabOffsetX: gX,
+            grabOffsetY: gY
+          })
         } else {
           const node = this.scene.getNodeById(id)
           if (node) {
+            const style = node.style as Record<string, unknown>
+            const gX = worldPoint.x - node.worldRect.x
+            const gY = worldPoint.y - node.worldRect.y
             this.dragStartStates.set(id, { 
-              x: (node.style as Record<string, unknown>).left as number || 0, 
-              y: (node.style as Record<string, unknown>).top as number || 0,
+              initialX: (style.left as number) || 0, 
+              initialY: (style.top as number) || 0,
+              grabOffsetX: gX,
+              grabOffsetY: gY,
               parentId: node.parent?.id,
               style: { ...node.style }
             })
@@ -156,9 +182,6 @@ export class InteractionManager {
 
   private handlePointerMove = (e: PointerEvent) => {
     const worldPoint = this.getEventWorldPoint(e)
-    const worldDx = (e.clientX - this.lastMouseX) / this.viewport.zoom
-    const worldDy = (e.clientY - this.lastMouseY) / this.viewport.zoom
-
     this.dispatch('move', null, e, worldPoint.x, worldPoint.y)
 
     if (this.state.isPanning) {
@@ -176,23 +199,55 @@ export class InteractionManager {
       this.dispatch('boxSelectMove', null, e, worldPoint.x, worldPoint.y)
     } else if (this.state.isDragging && this.state.draggedNode) {
       for (const id of this.state.selectedNodes) {
+        const startState = this.dragStartStates.get(id)
+        if (!startState) continue
+
         const screen = this.scene.getScreen(id)
         if (screen) {
+          const newX = worldPoint.x - startState.grabOffsetX;
+          const newY = worldPoint.y - startState.grabOffsetY;
+          if (id === this.state.draggedNode?.id) {
+             // console.log(`[DragMove] Screen id=${id}, world.x=${worldPoint.x}, gX=${startState.grabOffsetX}, newX=${newX}`);
+          }
           this.scene.updateNode(id, {
-            x: screen.x + worldDx,
-            y: screen.y + worldDy,
+            x: newX,
+            y: newY,
           })
         } else {
           const node = this.scene.getNodeById(id)
           if (node) {
             const style = node.style as Record<string, unknown>
-            this.scene.updateNode(id, {
-              style: {
-                ...style,
-                left: ((style.left as number) || 0) + worldDx,
-                top: ((style.top as number) || 0) + worldDy,
-              }
-            })
+            const startState = this.dragStartStates.get(id)
+            if (!startState) continue
+
+            // Use absolute positioning during drag for perfect following
+            let targetWorldX = worldPoint.x - startState.grabOffsetX
+            let targetWorldY = worldPoint.y - startState.grabOffsetY
+
+            if (node.parent) {
+              const parentBounds = node.parent.worldRect
+              
+              // Clamp to parent boundaries
+              targetWorldX = Math.max(parentBounds.x, Math.min(targetWorldX, parentBounds.x + parentBounds.w - node.rect.w))
+              targetWorldY = Math.max(parentBounds.y, Math.min(targetWorldY, parentBounds.y + parentBounds.h - node.rect.h))
+              
+              const localX = targetWorldX - parentBounds.x
+              const localY = targetWorldY - parentBounds.y
+
+              this.scene.updateNode(id, {
+                style: { 
+                  ...style, 
+                  position: 'absolute',
+                  left: localX, 
+                  top: localY 
+                }
+              })
+            } else {
+               // Node has no parent but isn't a screen? Should be handled by snapback later.
+               this.scene.updateNode(id, {
+                style: { ...style, left: targetWorldX, top: targetWorldY }
+              })
+            }
           }
         }
       }
@@ -223,54 +278,57 @@ export class InteractionManager {
     }
 
     if (this.state.isDragging) {
-      // HANDLE DROP CONSTRAINTS
       for (const id of this.state.selectedNodes) {
         const screen = this.scene.getScreen(id)
-        if (screen) continue // Screens can be dropped anywhere
+        if (screen) continue // Screens can be dropped anywhere on canvas
 
         const node = this.scene.getNodeById(id)
-        if (!node) continue
+        const startState = this.dragStartStates.get(id)
+        if (!node || !startState) continue
 
-        const hit = this.scene.hitTest(worldPoint.x, worldPoint.y)
-        let targetScreen: import('@/core/scene/types').ScreenNode | null = null
-        
-        // Find the screen we are dropping into
-        if (hit) {
-          // Find root of hit
-          let curr: SceneNode = hit
-          while (curr.parent) {
-            curr = curr.parent
-          }
-          // curr is now a screen root. find which screen it belongs to.
-          for (const s of this.scene.allScreens) {
-            if (s.root.id === curr.id) {
-              targetScreen = s
-              break
+        // 1. Find valid drop target (screen or view that accepts children)
+        const hits = this.scene.spatialIndex.getCandidatesAtPoint(worldPoint.x, worldPoint.y)
+        let bestTarget: SceneNode | null = null
+        let maxDepth = -1
+
+        for (const hit of hits) {
+          if (hit.id === node.id) continue // Can't drop on self
+          
+          // Check if this hit is or is inside a Screen
+          // Only 'view' nodes or Screen roots can accept children
+          if (hit.type === 'view') {
+            const depth = this.getNodeDepth(hit)
+            if (depth > maxDepth) {
+              maxDepth = depth
+              bestTarget = hit
             }
           }
         }
 
-        if (targetScreen) {
-          // Drop valid! Reparent if needed.
-          if (node.parent?.id !== targetScreen.root.id) {
-            // Convert world coords to local coords of target screen
-            const style = node.style as Record<string, unknown>
-            const localX = worldPoint.x - targetScreen.x
-            const localY = worldPoint.y - targetScreen.y
-            
-            this.scene.updateNode(id, {
-              style: { ...style, left: localX - node.rect.w / 2, top: localY - node.rect.h / 2 }
-            })
-            this.scene.reparent(id, targetScreen.root.id)
+        if (bestTarget) {
+          // Reparenting logic
+          const style = node.style as Record<string, unknown>
+          
+          this.scene.updateNode(id, {
+            style: { 
+              ...style, 
+              position: 'relative', // Yoga takes over now!
+              left: 0, // Reset offsets
+              top: 0 
+            }
+          })
+          
+          if (node.parent?.id !== bestTarget.id) {
+            this.scene.reparent(id, bestTarget.id)
           }
         } else {
-          // Drop invalid! Snap back.
-          const start = this.dragStartStates.get(id)
-          if (start) {
-            if (start.parentId) {
-               this.scene.reparent(id, start.parentId)
-            }
-            this.scene.updateNode(id, { style: start.style as Record<string, unknown> })
+          // Invalid drop (on canvas or non-view node) -> Snap back to original parent
+          if (startState.parentId) {
+            this.scene.reparent(id, startState.parentId)
+            this.scene.updateNode(id, { style: startState.style as Record<string, unknown> })
+          } else {
+             // This node was somehow at root but not a screen? Snap back anyway.
+             this.scene.updateNode(id, { style: startState.style as Record<string, unknown> })
           }
         }
       }
@@ -319,6 +377,16 @@ export class InteractionManager {
   private getEventWorldPoint(e: PointerEvent) {
     const rect = this.canvas.getBoundingClientRect()
     return this.viewport.screenToWorld(e.clientX, e.clientY, rect)
+  }
+
+  private getNodeDepth(node: SceneNode): number {
+    let depth = 0
+    let curr = node.parent
+    while (curr) {
+      depth++
+      curr = curr.parent
+    }
+    return depth
   }
 
   private dispatch(
