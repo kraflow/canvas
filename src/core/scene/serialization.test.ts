@@ -72,7 +72,7 @@ describe('SceneGraph Serialization', () => {
     const graph = await SceneGraph.create(ck, fonts)
 
     // 2. Create a test tree
-    const screen = graph.addScreen('main', 10, 20, 800, 600)
+    const screen = graph.addScreen('main', 'Main Screen', 10, 20, 800, 600)
     // Use a numeric color or assume the mock handles it
     const viewNode = graph.createNode('view', { backgroundColor: [1, 0, 0, 1] })
     const textNode = graph.createNode('text', { fontSize: 16 })

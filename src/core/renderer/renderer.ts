@@ -79,7 +79,7 @@ export class CanvasRenderer {
 
     if (!this.surface) {
       // Fallback if the webgl options failed
-      this.surface = this.ck.MakeWebGLCanvasSurface(this.canvas)
+      this.surface = this.ck.MakeSWCanvasSurface(this.canvas)
     }
 
     if (!this.surface) {

@@ -81,7 +81,10 @@ export class Viewport {
    */
   public getVisibleBounds(screenWidth: number, screenHeight: number) {
     const topLeft = this.screenToWorld(0, 0, { left: 0, top: 0 } as DOMRect)
-    const bottomRight = this.screenToWorld(screenWidth, screenHeight, { left: 0, top: 0 } as DOMRect)
+    const bottomRight = this.screenToWorld(screenWidth, screenHeight, {
+      left: 0,
+      top: 0,
+    } as DOMRect)
     return {
       left: topLeft.x,
       top: topLeft.y,

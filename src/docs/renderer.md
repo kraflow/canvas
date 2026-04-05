@@ -20,27 +20,32 @@ const renderer = new CanvasRenderer({
 })
 ```
 
-| Option     | Type                            | Description                                          |
-| ---------- | ------------------------------- | ---------------------------------------------------- |
-| `canvas`   | `HTMLCanvasElement`             | The DOM element to render into                       |
-| `onDraw`   | `(canvas: Canvas, ck: ck) => void` | Your main draw loop callback                         |
-| `viewport` | `Viewport`                      | _(optional)_ Initial viewport state                  |
+| Option     | Type                               | Description                         |
+| ---------- | ---------------------------------- | ----------------------------------- |
+| `canvas`   | `HTMLCanvasElement`                | The DOM element to render into      |
+| `onDraw`   | `(canvas: Canvas, ck: ck) => void` | Your main draw loop callback        |
+| `viewport` | `Viewport`                         | _(optional)_ Initial viewport state |
 
 ### Methods
 
 #### `async initialize(): Promise<void>`
+
 Loads the CanvasKit WASM module and builds the initial WebGL surface.
 
 #### `requestFrame(): void`
+
 Requests a single frame to be drawn. Use this for reactive updates when not in a continuous animation loop.
 
 #### `setAnimating(animating: boolean): void`
+
 Starts or stops a continuous `requestAnimationFrame` loop (e.g., for games or smooth transitions).
 
 #### `resize(width: number, height: number): void`
+
 Resizes the internal surface to match new CSS dimensions. Handles HiDPI (`devicePixelRatio`) automatically.
 
 #### `dispose(): void`
+
 Tears down the WebGL surface and stops all animation loops.
 
 ---
@@ -63,15 +68,19 @@ const viewport = new Viewport({ x: 0, y: 0, zoom: 1 })
 ### Methods
 
 #### `screenToWorld(x, y, rect): { x, y }`
+
 Converts a screen-space coordinate (e.g., from a MouseEvent) to world-space.
 
 #### `worldToScreen(x, y, rect): { x, y }`
+
 Converts a world-space coordinate to screen-space.
 
 #### `translate(dx, dy): void`
+
 Pans the viewport by a delta.
 
 #### `zoomAtPoint(delta, screenX, screenY, rect): void`
+
 Zooms toward or away from a specific screen-space point (anchor zoom).
 
 ---
@@ -89,6 +98,7 @@ import { renderView, renderText, renderImage } from '@/core/renderer/draw'
 Renders a View element with all visual properties (shadows, borders, transforms).
 
 **Draw order:**
+
 1. Transforms (2D Matrix)
 2. Opacity + Filters (Blur, Brightness, etc.)
 3. Outset box shadows

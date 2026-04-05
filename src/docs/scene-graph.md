@@ -43,11 +43,11 @@ scene.removeScreen('home')
 
 **Nodes** are the building blocks of your UI.
 
-| Node Type | Style        | Content                  |
-| --------- | ------------ | ------------------------ |
-| `view`    | `ViewStyle`  | Children, Scroll         |
-| `text`    | `TextStyle`  | `text` string            |
-| `image`   | `ImageStyle` | `SkImage` from cache     |
+| Node Type | Style        | Content              |
+| --------- | ------------ | -------------------- |
+| `view`    | `ViewStyle`  | Children, Scroll     |
+| `text`    | `TextStyle`  | `text` string        |
+| `image`   | `ImageStyle` | `SkImage` from cache |
 
 ### Operations
 
@@ -66,7 +66,9 @@ scene.applyStyle(node, { ...node.style, opacity: 0.5 })
 
 // Compute and Traversals
 scene.computeAllLayouts() // Must call before rendering
-scene.walk((node, absoluteRect) => { /* Render node */ })
+scene.walk((node, absoluteRect) => {
+  /* Render node */
+})
 ```
 
 ---
@@ -76,9 +78,11 @@ scene.walk((node, absoluteRect) => { /* Render node */ })
 The `SceneGraph` maintains a `SpatialIndex` that is rebuilt every time `computeAllLayouts()` is called. This allows for extremely fast intersection queries even with thousands of nodes.
 
 ### `hitTest(worldX, worldY): SceneNode | null`
+
 Returns the front-most node at the given world-space coordinates. Respects `pointerEvents: 'none'` styles.
 
 ### `boxTest(worldRect): SceneNode[]`
+
 Returns all top-most nodes that intersect with the given world-space marquee selection box. Useful for multi-select.
 
 ---

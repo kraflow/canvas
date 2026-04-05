@@ -36,6 +36,7 @@ export interface SceneNode {
 
 export interface ScreenNode {
   readonly id: string
+  name: string
   x: number
   y: number
   width: number
@@ -65,6 +66,7 @@ export interface SerializedSceneNode {
 
 export interface SerializedScreenNode {
   id: string
+  name: string
   x: number
   y: number
   width: number

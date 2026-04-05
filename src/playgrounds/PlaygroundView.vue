@@ -1,40 +1,52 @@
 <script setup lang="ts">
-import { ref, shallowRef, onMounted, onUnmounted, watch, computed } from 'vue'
+import { ref, shallowRef, onMounted, onUnmounted, watch, computed, triggerRef } from 'vue'
 import { CanvasRenderer } from '@/core/renderer/renderer'
 import { Viewport } from '@/core/viewport/Viewport'
 import { SceneGraph } from '@/core/scene/scene-graph'
 import { InteractionManager } from '@/core/interaction/InteractionManager'
 import { createFontSystem } from '@/core/fonts'
-import {
-  DEFAULT_SCREEN_WIDTH,
-  DEFAULT_SCREEN_HEIGHT,
-  COLORS,
-  DEFAULT_NODE_SPACING,
-  DEFAULT_NODE_PADDING,
-  DEFAULT_NODE_RADIUS,
-} from './constants'
+// Playground Constants
+const DEFAULT_SCREEN_WIDTH = 375
+const DEFAULT_SCREEN_HEIGHT = 812
+const DEFAULT_NODE_SPACING = 20
+const DEFAULT_NODE_PADDING = 16
+const DEFAULT_NODE_RADIUS = 8
+
+const COLORS = {
+  VIEW: {
+    bg: new Float32Array([0.388, 0.4, 0.945, 0.1]), // rgba(99, 102, 241, 0.1)
+    border: new Float32Array([0.388, 0.4, 0.945, 0.8]), // rgba(99, 102, 241, 0.8)
+  },
+  TEXT: {
+    bg: new Float32Array([0, 0, 0, 0]),
+    border: new Float32Array([0.925, 0.282, 0.6, 0.8]), // rgba(236, 72, 153, 0.8)
+    color: new Float32Array([1, 1, 1, 1]),
+  },
+  IMAGE: {
+    bg: new Float32Array([0.176, 0.831, 0.749, 0.1]), // rgba(45, 212, 191, 0.1)
+    border: new Float32Array([0.176, 0.831, 0.749, 0.8]), // rgba(45, 212, 191, 0.8)
+  },
+}
+
 import { defaultFontManifest } from './font-manifest'
 import type { Canvas, CanvasKit } from 'canvaskit-wasm'
-import type { SceneNode, SerializedProject } from '@/core/scene/types'
+import type { SceneNode } from '@/core/scene/types'
 import type { InteractionEvent } from '@/core/interaction/types'
-
-// History state
-interface HistoryState {
-  project: SerializedProject
-}
+import { InteractionOverlayManager } from '@/core/interaction/InteractionOverlayManager'
+import type { ViewStyle, TextStyle, ImageStyle } from '@/core/styles'
+import { renderView, renderText, renderImage, renderInfiniteGrid } from '@/core/renderer/draw'
 
 // Core
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const scene = shallowRef<SceneGraph | null>(null)
 const interaction = shallowRef<InteractionManager | null>(null)
+const overlayManager = shallowRef<InteractionOverlayManager | null>(null)
 const renderer = shallowRef<CanvasRenderer | null>(null)
 const viewport = new Viewport({ x: 0, y: 0, zoom: 1 })
 
 // UI State
 const zoomLevel = ref(100)
 const cursorCoords = ref({ x: 0, y: 0 })
-const history = ref<HistoryState[]>([])
-const redoStack = ref<HistoryState[]>([])
 
 // Placement State
 const isPlacingScreen = ref(false)
@@ -72,9 +84,10 @@ const addScreenAt = (x: number, y: number) => {
     return
   }
 
-  saveToHistory()
-  scene.value.addScreen(Math.random().toString(36).substr(2, 9), x, y, w, h)
+  const name = `Screen ${Array.from(scene.value.allScreens).length + 1}`
+  scene.value.addScreen(Math.random().toString(36).substr(2, 9), name, x, y, w, h)
   isPlacingScreen.value = false
+  triggerRef(scene)
   renderer.value?.requestFrame()
 }
 
@@ -87,12 +100,12 @@ const addNode = (type: 'view' | 'text' | 'image') => {
 
   if (selectedIds.size === 1) {
     const id = Array.from(selectedIds)[0]
-    const target = scene.value.getNodeById(id)
+    const target = scene.value.getNodeById(id!)
     if (target) {
       // If it's a view or root, it's a valid parent
       parent = target
     } else {
-      const screen = scene.value.getScreen(id)
+      const screen = scene.value.getScreen(id!)
       if (screen) parent = screen.root as SceneNode
     }
   }
@@ -108,7 +121,6 @@ const addNode = (type: 'view' | 'text' | 'image') => {
     parent = firstScreen.root
   }
 
-  saveToHistory()
   const newNode = scene.value.createNode(type, {
     backgroundColor: type === 'view' ? COLORS.VIEW.bg : undefined,
     width: parent.rect.w - DEFAULT_NODE_SPACING * 2,
@@ -123,61 +135,82 @@ const addNode = (type: 'view' | 'text' | 'image') => {
         : type === 'text'
           ? COLORS.TEXT.border
           : COLORS.IMAGE.border,
-  } as any)
+  } as ViewStyle)
 
   if (type === 'text') {
     scene.value.setText(newNode, 'New Text Layer')
-    scene.value.applyStyle(newNode, { color: COLORS.TEXT.color, fontSize: 16 } as any)
+    scene.value.applyStyle(newNode, { color: COLORS.TEXT.color, fontSize: 16 } as TextStyle)
   }
 
   scene.value.appendChild(parent, newNode)
+  triggerRef(scene)
   renderer.value?.requestFrame()
-}
-
-const undo = () => {
-  if (history.value.length > 0 && scene.value) {
-    const project = scene.value.exportProject()
-    redoStack.value.push({ project })
-    const prev = history.value.pop()!
-    scene.value.importProject(prev.project)
-    renderer.value?.requestFrame()
-  }
-}
-
-const redo = () => {
-  if (redoStack.value.length > 0 && scene.value) {
-    const project = scene.value.exportProject()
-    history.value.push({ project })
-    const next = redoStack.value.pop()!
-    scene.value.importProject(next.project)
-    renderer.value?.requestFrame()
-  }
-}
-
-const saveToHistory = () => {
-  if (scene.value) {
-    history.value.push({ project: scene.value.exportProject() })
-    redoStack.value = []
-  }
 }
 
 // Drawing logic
 const onDraw = (canvas: Canvas, ck: CanvasKit) => {
   if (!canvasRef.value || !scene.value) return
 
-  scene.value.render(canvas, ck, viewport, {
-    showGrid: true,
-    interactionState: interaction.value?.getState(),
-    placementGhost: isPlacingScreen.value
-      ? {
-          x: ghostScreenPos.value.x,
-          y: ghostScreenPos.value.y,
-          w: DEFAULT_SCREEN_WIDTH,
-          h: DEFAULT_SCREEN_HEIGHT,
-          overlap: ghostOverlap.value,
-        }
-      : undefined,
+  const interactionState = interaction.value?.getState()
+
+  // 1. Layout & Setup
+  scene.value.computeAllLayouts()
+  scene.value.drawContext.beginFrame()
+
+  // 2. Background Grid
+  canvas.save()
+  const bounds = canvas.getDeviceClipBounds()
+  renderInfiniteGrid(ck, canvas, viewport, bounds[2] ?? 0, bounds[3] ?? 0, scene.value.drawContext)
+  canvas.restore()
+
+  // 3. Render Tree
+  scene.value.walk((node, absRect) => {
+    if (node.type === 'view') {
+      renderView(
+        ck,
+        canvas,
+        node.style as ViewStyle,
+        absRect,
+        node.scroll,
+        undefined,
+        scene.value!.drawContext,
+      )
+    } else if (node.type === 'text') {
+      renderText(
+        ck,
+        canvas,
+        node.style as TextStyle,
+        absRect,
+        node.text || '',
+        scene.value!.fonts,
+        undefined,
+        scene.value!.drawContext,
+      )
+    } else if (node.type === 'image') {
+      renderImage(
+        ck,
+        canvas,
+        node.style as ImageStyle,
+        absRect,
+        node.image || null,
+        scene.value!.drawContext,
+      )
+    }
   })
+
+  if (overlayManager.value && interactionState) {
+    overlayManager.value.render(canvas, viewport, interactionState, {
+      placementGhost: isPlacingScreen.value
+        ? {
+            x: ghostScreenPos.value.x,
+            y: ghostScreenPos.value.y,
+            w: DEFAULT_SCREEN_WIDTH,
+            h: DEFAULT_SCREEN_HEIGHT,
+            overlap: ghostOverlap.value,
+          }
+        : undefined,
+    })
+  }
 }
 
 onMounted(async () => {
@@ -195,7 +228,13 @@ onMounted(async () => {
   // 2. Initialize Core Engine
   const fonts = await createFontSystem(ck!, defaultFontManifest)
   scene.value = await SceneGraph.create(ck!, fonts)
-  interaction.value = new InteractionManager(canvasRef.value, scene.value, viewport)
+  overlayManager.value = new InteractionOverlayManager(ck!, scene.value.drawContext, scene.value)
+  interaction.value = new InteractionManager(
+    canvasRef.value,
+    scene.value,
+    viewport,
+    overlayManager.value,
+  )
 
   // 3. Setup Interaction Listeners
   interaction.value.on((e: InteractionEvent) => {
@@ -208,7 +247,15 @@ onMounted(async () => {
       interactionMode.value = state.mode
     }
 
-    if (e.type === 'modeChange' || e.type.includes('Move') || e.type.includes('Start') || e.type.includes('End') || e.type === 'hover' || e.type === 'scroll') {
+    if (
+      e.type === 'modeChange' ||
+      e.type === 'move' ||
+      e.type.includes('Move') ||
+      e.type.includes('Start') ||
+      e.type.includes('End') ||
+      e.type === 'hover' ||
+      e.type === 'scroll'
+    ) {
       renderer.value?.requestFrame()
     }
 
@@ -218,7 +265,7 @@ onMounted(async () => {
 
     if (e.worldX !== 0 || e.worldY !== 0) {
       cursorCoords.value = { x: Math.round(e.worldX), y: Math.round(e.worldY) }
-      
+
       if (isPlacingScreen.value) {
         ghostScreenPos.value = {
           x: Math.round(e.worldX - DEFAULT_SCREEN_WIDTH / 2),
@@ -258,10 +305,6 @@ watch(interactionMode, (mode) => {
   if (interaction.value && interaction.value.getState().mode !== mode) {
     interaction.value.setMode(mode)
   }
-})
-
-onUnmounted(() => {
-  renderer.value?.dispose()
 })
 
 // Stats and computed
@@ -336,14 +379,14 @@ const canvasCursor = computed(() => {
         </div>
         <div class="divider"></div>
         <div class="tool-group history-tools">
-          <button @click="undo" :disabled="history.length === 0" title="Undo (Ctrl+Z)">
+          <button title="Undo (Ctrl+Z)">
             <svg viewBox="0 0 24 24" class="icon">
               <path
                 d="M12.5 8c-2.65 0-5.05.99-6.9 2.6L2 7v9h9l-3.62-3.62c1.39-1.16 3.16-1.88 5.12-1.88 3.54 0 6.55 2.31 7.6 5.5l2.37-.78C21.08 11.03 17.15 8 12.5 8z"
               />
             </svg>
           </button>
-          <button @click="redo" :disabled="redoStack.length === 0" title="Redo (Ctrl+Y)">
+          <button title="Redo (Ctrl+Y)">
             <svg viewBox="0 0 24 24" class="icon">
               <path
                 d="M18.4 10.6C16.55 8.99 14.15 8 11.5 8c-4.65 0-8.58 3.03-9.96 7.22L3.91 16c1.05-3.19 4.06-5.5 7.59-5.5 1.96 0 3.73.72 5.12 1.88L13 16h9V7l-3.6 3.6z"
@@ -444,10 +487,7 @@ const canvasCursor = computed(() => {
           +
         </button>
       </div>
-      <div class="layer-info">
-        {{ screenCount }} Screens ·
-        {{ nodeCount }} Layers
-      </div>
+      <div class="layer-info">{{ screenCount }} Screens · {{ nodeCount }} Layers</div>
     </footer>
   </div>
 </template>

@@ -1,11 +1,12 @@
 import type { Canvas, CanvasKit } from 'canvaskit-wasm'
 import type { Viewport } from '../../viewport/Viewport'
+import type { DrawContext } from './draw-context'
 
 /**
  * Renders an infinite background grid that pans and zooms with the viewport.
  * The grid should be drawn BEFORE applying viewport transformations to the canvas,
  * or it should be calculated to align with the transformed world space.
- * 
+ *
  * Drawing it in screen space (before viewport transform) is often easier to manage
  * for fixed pixel-width lines.
  */
@@ -15,6 +16,7 @@ export function renderInfiniteGrid(
   viewport: Viewport,
   width: number,
   height: number,
+  ctx?: DrawContext,
 ): void {
   const zoom = viewport.zoom
   const bounds = viewport.getVisibleBounds(width, height)
@@ -25,7 +27,7 @@ export function renderInfiniteGrid(
   else if (zoom < 0.4) gridSize = 200
   else if (zoom > 2.5) gridSize = 10
 
-  const paint = new ck.Paint()
+  const paint = ctx ? ctx.paint() : new ck.Paint()
   paint.setAntiAlias(true)
   paint.setStyle(ck.PaintStyle.Stroke)
 
@@ -71,5 +73,5 @@ export function renderInfiniteGrid(
     canvas.drawLine(bounds.left, 0, bounds.right, 0, paint)
   }
 
-  paint.delete()
+  if (!ctx) paint.delete()
 }

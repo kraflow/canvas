@@ -35,6 +35,11 @@ export class DrawContext {
 
   // ── PathEffect cache (key → effect) ───────────────────────────────────────
   private readonly pathEffectCache = new Map<string, PathEffect>()
+  private readonly dashCache = new Map<string, PathEffect>()
+
+  // ── Rect pool (Float32Array [l, t, r, b]) ──────────────────────────────────
+  private readonly rects: Float32Array[] = []
+  private rectIdx = 0
 
   constructor(ck: CanvasKit) {
     this.ck = ck
@@ -50,6 +55,7 @@ export class DrawContext {
    */
   beginFrame(): void {
     this.paintIdx = 0
+    this.rectIdx = 0
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -162,6 +168,44 @@ export class DrawContext {
     return pe
   }
 
+  /**
+   * Returns a cached/pooled dash PathEffect for arbitrary intervals.
+   * To be used for interactive overlays (hover, etc).
+   */
+  dashEffect(intervals: number[]): PathEffect {
+    const key = intervals.map((v) => Math.round(v * 10) / 10).join(',')
+    let pe = this.dashCache.get(key)
+    if (!pe) {
+      pe = this.ck.PathEffect.MakeDash(intervals)
+      this.dashCache.set(key, pe)
+    }
+    return pe
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // Rect pool (Float32Array [l, t, r, b])
+  // ─────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Returns a pooled Float32Array rect in LTRB format.
+   * CanvasKit functions like drawRect often accept these directly.
+   */
+  rect(l: number, t: number, r: number, b: number): Float32Array {
+    if (this.rectIdx < this.rects.length) {
+      const arr = this.rects[this.rectIdx++]!
+      arr[0] = l
+      arr[1] = t
+      arr[2] = r
+      arr[3] = b
+      return arr
+    }
+
+    const arr = new Float32Array([l, t, r, b])
+    this.rects.push(arr)
+    this.rectIdx++
+    return arr
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // Diagnostics
   // ─────────────────────────────────────────────────────────────────────────
@@ -191,5 +235,11 @@ export class DrawContext {
 
     for (const pe of this.pathEffectCache.values()) pe.delete()
     this.pathEffectCache.clear()
+
+    for (const pe of this.dashCache.values()) pe.delete()
+    this.dashCache.clear()
+
+    this.rects.length = 0
+    this.rectIdx = 0
   }
 }

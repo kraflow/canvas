@@ -18,15 +18,15 @@ export function toColor(ck: CanvasKit, value: ColorValue): Color {
   // Array of numbers [r, g, b, a] in 0-255
   if (Array.isArray(value)) {
     const [r = 0, g = 0, b = 0, a = 255] = value
-    return ck.Color(r, g, b, a / 255)
+    return ck.Color(r / 255, g / 255, b / 255, a / 255)
   }
 
   // Packed ARGB int
   if (typeof value === 'number') {
     const a = ((value >>> 24) & 0xff) / 255
-    const r = (value >>> 16) & 0xff
-    const g = (value >>> 8) & 0xff
-    const b = value & 0xff
+    const r = ((value >>> 16) & 0xff) / 255
+    const g = ((value >>> 8) & 0xff) / 255
+    const b = (value & 0xff) / 255
     return ck.Color(r, g, b, a)
   }
 

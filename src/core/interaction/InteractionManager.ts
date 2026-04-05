@@ -8,6 +8,7 @@ import type {
   InteractionEventType,
   InteractionMode,
 } from './types'
+import type { InteractionOverlayManager } from './InteractionOverlayManager'
 
 export class InteractionManager {
   private canvas: HTMLCanvasElement
@@ -28,14 +29,26 @@ export class InteractionManager {
   private lastMouseX = 0
   private lastMouseY = 0
   private boxStartPoint = { x: 0, y: 0 }
+  private dragStartStates = new Map<string, { x: number; y: number; parentId?: string; style?: unknown }>()
   private listeners: Set<InteractionCallback> = new Set()
   private originalMode: InteractionMode | null = null
+  private overlayManager: InteractionOverlayManager | null = null
 
-  constructor(canvas: HTMLCanvasElement, scene: SceneGraph, viewport?: Viewport) {
+  constructor(
+    canvas: HTMLCanvasElement,
+    scene: SceneGraph,
+    viewport?: Viewport,
+    overlayManager?: InteractionOverlayManager,
+  ) {
     this.canvas = canvas
     this.scene = scene
     this.viewport = viewport || new Viewport()
+    this.overlayManager = overlayManager || null
     this.setupListeners()
+  }
+
+  public getOverlayManager(): InteractionOverlayManager | null {
+    return this.overlayManager
   }
 
   public getState(): InteractionState {
@@ -97,19 +110,38 @@ export class InteractionManager {
 
     if (hit) {
       if (!this.state.selectedNodes.has(hit.id)) {
-        // Not already selected -> update selection
-        if (!e.shiftKey) {
-          this.state.selectedNodes.clear()
-        }
+        if (!e.shiftKey) this.state.selectedNodes.clear()
+        
+        // If hit is a node, prefer its screen if selecting screens?
+        // Actually, just add the hit node.
         this.state.selectedNodes.add(hit.id)
       } else if (e.shiftKey) {
-        // Already selected + Shift -> toggle off
         this.state.selectedNodes.delete(hit.id)
         return
       }
 
       this.state.isDragging = true
       this.state.draggedNode = hit
+      
+      // Store start states for all selected items
+      this.dragStartStates.clear()
+      for (const id of this.state.selectedNodes) {
+        const screen = this.scene.getScreen(id)
+        if (screen) {
+          this.dragStartStates.set(id, { x: screen.x, y: screen.y })
+        } else {
+          const node = this.scene.getNodeById(id)
+          if (node) {
+            this.dragStartStates.set(id, { 
+              x: (node.style as Record<string, unknown>).left as number || 0, 
+              y: (node.style as Record<string, unknown>).top as number || 0,
+              parentId: node.parent?.id,
+              style: { ...node.style }
+            })
+          }
+        }
+      }
+
       this.dispatch('dragStart', hit, e, worldPoint.x, worldPoint.y)
     } else {
       // Start marquee selection
@@ -127,6 +159,8 @@ export class InteractionManager {
     const worldDx = (e.clientX - this.lastMouseX) / this.viewport.zoom
     const worldDy = (e.clientY - this.lastMouseY) / this.viewport.zoom
 
+    this.dispatch('move', null, e, worldPoint.x, worldPoint.y)
+
     if (this.state.isPanning) {
       const screenDx = e.clientX - this.lastMouseX
       const screenDy = e.clientY - this.lastMouseY
@@ -141,16 +175,26 @@ export class InteractionManager {
       }
       this.dispatch('boxSelectMove', null, e, worldPoint.x, worldPoint.y)
     } else if (this.state.isDragging && this.state.draggedNode) {
-      // MOVE ALL SELECTED NODES
       for (const id of this.state.selectedNodes) {
-        const node = this.scene.getNodeById(id)
-        if (!node) continue
-        const currentStyle = node.style as Record<string, unknown>
-        this.scene.applyStyle(node, {
-          ...currentStyle,
-          left: ((currentStyle.left as number) || 0) + worldDx,
-          top: ((currentStyle.top as number) || 0) + worldDy,
-        })
+        const screen = this.scene.getScreen(id)
+        if (screen) {
+          this.scene.updateNode(id, {
+            x: screen.x + worldDx,
+            y: screen.y + worldDy,
+          })
+        } else {
+          const node = this.scene.getNodeById(id)
+          if (node) {
+            const style = node.style as Record<string, unknown>
+            this.scene.updateNode(id, {
+              style: {
+                ...style,
+                left: ((style.left as number) || 0) + worldDx,
+                top: ((style.top as number) || 0) + worldDy,
+              }
+            })
+          }
+        }
       }
       this.dispatch('dragMove', this.state.draggedNode, e, worldPoint.x, worldPoint.y)
     } else if (this.state.mode !== 'move') {
@@ -179,9 +223,62 @@ export class InteractionManager {
     }
 
     if (this.state.isDragging) {
+      // HANDLE DROP CONSTRAINTS
+      for (const id of this.state.selectedNodes) {
+        const screen = this.scene.getScreen(id)
+        if (screen) continue // Screens can be dropped anywhere
+
+        const node = this.scene.getNodeById(id)
+        if (!node) continue
+
+        const hit = this.scene.hitTest(worldPoint.x, worldPoint.y)
+        let targetScreen: import('@/core/scene/types').ScreenNode | null = null
+        
+        // Find the screen we are dropping into
+        if (hit) {
+          // Find root of hit
+          let curr: SceneNode = hit
+          while (curr.parent) {
+            curr = curr.parent
+          }
+          // curr is now a screen root. find which screen it belongs to.
+          for (const s of this.scene.allScreens) {
+            if (s.root.id === curr.id) {
+              targetScreen = s
+              break
+            }
+          }
+        }
+
+        if (targetScreen) {
+          // Drop valid! Reparent if needed.
+          if (node.parent?.id !== targetScreen.root.id) {
+            // Convert world coords to local coords of target screen
+            const style = node.style as Record<string, unknown>
+            const localX = worldPoint.x - targetScreen.x
+            const localY = worldPoint.y - targetScreen.y
+            
+            this.scene.updateNode(id, {
+              style: { ...style, left: localX - node.rect.w / 2, top: localY - node.rect.h / 2 }
+            })
+            this.scene.reparent(id, targetScreen.root.id)
+          }
+        } else {
+          // Drop invalid! Snap back.
+          const start = this.dragStartStates.get(id)
+          if (start) {
+            if (start.parentId) {
+               this.scene.reparent(id, start.parentId)
+            }
+            this.scene.updateNode(id, { style: start.style as Record<string, unknown> })
+          }
+        }
+      }
+
       this.dispatch('dragEnd', this.state.draggedNode, e, worldPoint.x, worldPoint.y)
     }
 
+    this.dragStartStates.clear()
     this.state.isPanning = false
     this.state.isDragging = false
     this.state.isBoxSelecting = false

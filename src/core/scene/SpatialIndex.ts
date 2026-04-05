@@ -23,8 +23,6 @@ export class SpatialIndex {
   public rebuild(nodes: IterableIterator<SceneNode>): void {
     this.grid.clear()
     for (const node of nodes) {
-      if (node.id.startsWith('root')) continue // Skip screen roots
-
       const rect = node.worldRect
       const startX = Math.floor(rect.x / this.cellSize)
       const startY = Math.floor(rect.y / this.cellSize)
@@ -76,6 +74,55 @@ export class SpatialIndex {
     }
 
     return candidates
+  }
+
+  public insert(node: SceneNode): void {
+    const rect = node.worldRect
+    const startX = Math.floor(rect.x / this.cellSize)
+    const startY = Math.floor(rect.y / this.cellSize)
+    const endX = Math.floor((rect.x + rect.w) / this.cellSize)
+    const endY = Math.floor((rect.y + rect.h) / this.cellSize)
+
+    for (let x = startX; x <= endX; x++) {
+      for (let y = startY; y <= endY; y++) {
+        const key = `${x},${y}`
+        let cell = this.grid.get(key)
+        if (!cell) {
+          cell = []
+          this.grid.set(key, cell)
+        }
+        cell.push(node)
+      }
+    }
+  }
+
+  public remove(node: SceneNode): void {
+    const rect = node.worldRect
+    const startX = Math.floor(rect.x / this.cellSize)
+    const startY = Math.floor(rect.y / this.cellSize)
+    const endX = Math.floor((rect.x + rect.w) / this.cellSize)
+    const endY = Math.floor((rect.y + rect.h) / this.cellSize)
+
+    for (let x = startX; x <= endX; x++) {
+      for (let y = startY; y <= endY; y++) {
+        const key = `${x},${y}`
+        const cell = this.grid.get(key)
+        if (cell) {
+          const idx = cell.indexOf(node)
+          if (idx !== -1) {
+            cell.splice(idx, 1)
+          }
+          if (cell.length === 0) {
+            this.grid.delete(key)
+          }
+        }
+      }
+    }
+  }
+
+  public update(node: SceneNode): void {
+    this.remove(node)
+    this.insert(node)
   }
 
   public clear(): void {

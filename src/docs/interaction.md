@@ -26,13 +26,14 @@ const interaction = new InteractionManager(canvasElement, scene, viewport)
 
 The manager can operate in one of three modes, which dictate how it responds to pointer events.
 
-| Mode     | Description                                                                                     |
-| -------- | ----------------------------------------------------------------------------------------------- |
-| `'edit'` | **Default.** Cursor selection, node dragging, and marquee selection.                            |
-| `'move'` | Panning tool. Left-click pans the viewport.                                                     |
+| Mode     | Description                                                                                    |
+| -------- | ---------------------------------------------------------------------------------------------- |
+| `'edit'` | **Default.** Cursor selection, node dragging, and marquee selection.                           |
+| `'move'` | Panning tool. Left-click pans the viewport.                                                    |
 | `'play'` | Play-only mode, disabling all canvas-based selection and editing (for previewing interaction). |
 
 ### `setMode(mode: InteractionMode): void`
+
 Switches the current mode and resets the current selection/dragging state.
 
 ---
@@ -45,14 +46,14 @@ You can access the current state using `getState()`.
 const state = interaction.getState()
 ```
 
-| Property         | Type               | Description                                           |
-| ---------------- | ------------------ | ----------------------------------------------------- |
-| `selectedNodes`  | `Set<string>` (Id) | Sets of currently selected node IDs.                 |
-| `hoveredNode`    | `SceneNode | null`  | The node currently under the cursor.                  |
-| `draggedNode`    | `SceneNode | null`  | The node currently being dragged.                    |
-| `selectionBox`   | `LayoutRect | null` | The current world-space marquee selection box.       |
-| `isPanning`      | `boolean`          | Whether the user is currently panning the viewport.   |
-| `isBoxSelecting` | `boolean`          | Whether the user is currently marquee-selecting.      |
+| Property         | Type               | Description                                         |
+| ---------------- | ------------------ | --------------------------------------------------- | ---------------------------------------------- |
+| `selectedNodes`  | `Set<string>` (Id) | Sets of currently selected node IDs.                |
+| `hoveredNode`    | `SceneNode         | null`                                               | The node currently under the cursor.           |
+| `draggedNode`    | `SceneNode         | null`                                               | The node currently being dragged.              |
+| `selectionBox`   | `LayoutRect        | null`                                               | The current world-space marquee selection box. |
+| `isPanning`      | `boolean`          | Whether the user is currently panning the viewport. |
+| `isBoxSelecting` | `boolean`          | Whether the user is currently marquee-selecting.    |
 
 ---
 

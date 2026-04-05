@@ -20,23 +20,11 @@ import { ImageCache } from '@/core/renderer/draw/image-cache'
 import { toSerializableScreen } from './serialization'
 import type { StyleProp } from '@/core/styles'
 import { SpatialIndex } from './SpatialIndex'
-import { DrawContext, renderView, renderText, renderImage, renderInfiniteGrid } from '@/core/renderer/draw'
-import { drawHoverHighlight, drawSelectionHighlight, drawMarqueeSelection, drawPlacementGhost } from '@/core/renderer/draw/overlays'
-import type { InteractionState } from '@/core/interaction/types'
-import type { Viewport } from '@/core/viewport/Viewport'
-import type { Canvas } from 'canvaskit-wasm'
+import {
+  DrawContext,
+} from '@/core/renderer/draw'
 
-export interface RenderOptions {
-  showGrid?: boolean
-  interactionState?: InteractionState
-  placementGhost?: {
-    x: number
-    y: number
-    w: number
-    h: number
-    overlap?: boolean
-  }
-}
+
 
 /** Properties that, when changed, require a Yoga layout recomputation. */
 const LAYOUT_PROPS = new Set([
@@ -102,14 +90,19 @@ const LAYOUT_PROPS = new Set([
 export class SceneGraph {
   private readonly yoga: Yoga
   private readonly ck: CanvasKit
-  private readonly fonts: FontSystem
+  public readonly fonts: FontSystem
   private readonly textMeasureCache = new TextMeasureCache()
   private readonly imageCache: ImageCache
   private readonly screens = new Map<string, ScreenNode>()
   private readonly nodes = new Map<string, SceneNode>()
   private readonly spatialIndex = new SpatialIndex()
-  private readonly drawContext: DrawContext
+  public readonly drawContext: DrawContext
+  private _revision = 0
   private nextId = 1
+
+  public get revision(): number {
+    return this._revision
+  }
 
   private constructor(yoga: Yoga, ck: CanvasKit, fonts: FontSystem) {
     this.yoga = yoga
@@ -128,7 +121,7 @@ export class SceneGraph {
   // Screen management
   // ─────────────────────────────────────────────────────────────────────────
 
-  public addScreen(id: string, x: number, y: number, width: number, height: number): ScreenNode {
+  public addScreen(id: string, name: string, x: number, y: number, width: number, height: number): ScreenNode {
     if (this.screens.has(id)) {
       throw new Error(`[SceneGraph] Screen "${id}" already exists`)
     }
@@ -140,16 +133,18 @@ export class SceneGraph {
     const root: SceneNode = {
       id: this.genId('root'),
       type: 'view',
-      style: {},
+      style: { backgroundColor: new Float32Array([1, 1, 1, 1]) }, // Default white background
       children: [],
       parent: null,
       yogaNode: yogaRoot,
       rect: { x: 0, y: 0, w: width, h: height },
       worldRect: { x, y, w: width, h: height },
+      scroll: { x: 0, y: 0 },
     }
 
     const screen: ScreenNode = {
       id,
+      name,
       x,
       y,
       width,
@@ -160,15 +155,19 @@ export class SceneGraph {
 
     this.screens.set(id, screen)
     this.nodes.set(root.id, root)
+    this.spatialIndex.insert(root)
+    this._revision++
     return screen
   }
 
   public removeScreen(id: string): void {
     const screen = this.screens.get(id)
     if (!screen) return
+    this.spatialIndex.remove(screen.root)
     this.removeNodeFromMapRecursive(screen.root)
     screen.root.yogaNode.freeRecursive()
     this.screens.delete(id)
+    this._revision++
   }
 
   private removeNodeFromMapRecursive(node: SceneNode): void {
@@ -181,9 +180,22 @@ export class SceneGraph {
   public moveScreen(id: string, x: number, y: number): void {
     const screen = this.screens.get(id)
     if (!screen) return
+    const dx = x - screen.x
+    const dy = y - screen.y
     screen.x = x
     screen.y = y
-    screen.dirty = true // Screen moving affects worldRect of all children
+    screen.dirty = true
+    this.updateWorldRectsRecursive(screen.root, dx, dy)
+    this._revision++
+  }
+
+  private updateWorldRectsRecursive(node: SceneNode, dx: number, dy: number): void {
+    node.worldRect.x += dx
+    node.worldRect.y += dy
+    this.spatialIndex.update(node)
+    for (const child of node.children) {
+      this.updateWorldRectsRecursive(child, dx, dy)
+    }
   }
 
   public resizeScreen(id: string, width: number, height: number): void {
@@ -194,6 +206,8 @@ export class SceneGraph {
     screen.root.yogaNode.setWidth(width)
     screen.root.yogaNode.setHeight(height)
     screen.dirty = true
+    this.spatialIndex.update(screen.root)
+    this._revision++
   }
 
   public getScreen(id: string): ScreenNode | undefined {
@@ -230,6 +244,7 @@ export class SceneGraph {
       yogaNode,
       rect: { x: 0, y: 0, w: 0, h: 0 },
       worldRect: { x: 0, y: 0, w: 0, h: 0 },
+      scroll: { x: 0, y: 0 },
     }
 
     if (type === 'text') {
@@ -244,6 +259,8 @@ export class SceneGraph {
 
     syncStyleToYoga(this.yoga, yogaNode, style)
     this.nodes.set(node.id, node)
+    this.spatialIndex.insert(node)
+    this._revision++
     return node
   }
 
@@ -255,6 +272,7 @@ export class SceneGraph {
     parent.children.push(child)
     parent.yogaNode.insertChild(child.yogaNode, parent.yogaNode.getChildCount())
     this.markDirtyUp(parent, true)
+    this._revision++
   }
 
   public insertChild(parent: SceneNode, child: SceneNode, index: number): void {
@@ -265,6 +283,7 @@ export class SceneGraph {
     parent.children.splice(index, 0, child)
     parent.yogaNode.insertChild(child.yogaNode, index)
     this.markDirtyUp(parent, true)
+    this._revision++
   }
 
   public removeChild(parent: SceneNode, child: SceneNode): void {
@@ -274,14 +293,17 @@ export class SceneGraph {
     parent.yogaNode.removeChild(child.yogaNode)
     child.parent = null
     this.markDirtyUp(parent, true)
+    this._revision++
   }
 
   public destroyNode(node: SceneNode): void {
     if (node.parent) {
       throw new Error('[SceneGraph] Node must be detached before destroying')
     }
+    this.spatialIndex.remove(node)
     this.removeNodeFromMapRecursive(node)
     node.yogaNode.freeRecursive()
+    this._revision++
   }
 
   public applyStyle(
@@ -308,6 +330,8 @@ export class SceneGraph {
     }
 
     this.markDirtyUp(node, needsLayout)
+    this.spatialIndex.update(node)
+    this._revision++
   }
 
   public setText(node: SceneNode, text: string): void {
@@ -317,6 +341,75 @@ export class SceneGraph {
     node.text = text
     node.yogaNode.markDirty()
     this.markDirtyUp(node, true)
+    this.spatialIndex.update(node)
+    this._revision++
+  }
+
+  public updateNode(
+    id: string,
+    updates: {
+      name?: string
+      x?: number
+      y?: number
+      style?: StyleProp<ViewStyle | TextStyle | ImageStyle>
+      text?: string
+      src?: string
+      scroll?: { x: number; y: number }
+    },
+  ): void {
+    const screen = this.screens.get(id)
+    if (screen) {
+      if (updates.name !== undefined) screen.name = updates.name
+      if (updates.x !== undefined || updates.y !== undefined) {
+        this.moveScreen(id, updates.x ?? screen.x, updates.y ?? screen.y)
+      }
+      if (updates.style) {
+        this.applyStyle(screen.root, updates.style)
+      }
+      return
+    }
+
+    const node = this.nodes.get(id)
+    if (!node) return
+
+    if (updates.style) {
+      this.applyStyle(node, updates.style)
+    }
+    if (updates.text !== undefined) {
+      this.setText(node, updates.text)
+    }
+    if (updates.src !== undefined) {
+      node.src = updates.src
+    }
+    if (updates.scroll !== undefined) {
+      node.scroll = updates.scroll
+    }
+
+    this._revision++
+  }
+
+  public reparent(nodeId: string, newParentId: string, index?: number): void {
+    const node = this.nodes.get(nodeId)
+    const newParent = this.nodes.get(newParentId)
+    if (!node || !newParent) return
+    if (node.id === newParent.id) return
+
+    // Prevent circular parenting
+    let curr: SceneNode | null = newParent
+    while (curr) {
+      if (curr.id === node.id) return
+      curr = curr.parent
+    }
+
+    if (node.parent) {
+      this.removeChild(node.parent, node)
+    }
+
+    if (index !== undefined) {
+      this.insertChild(newParent, node, index)
+    } else {
+      this.appendChild(newParent, node)
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -351,65 +444,6 @@ export class SceneGraph {
     }
   }
 
-  /**
-   * Renders the entire scene graph onto the provided CanvasKit canvas.
-   * Handles layout computation, node drawing (View, Text, Image), and optional overlays.
-   */
-  public render(canvas: Canvas, ck: CanvasKit, viewport: Viewport, options?: RenderOptions): void {
-    // 1. Initial Setup
-    this.drawContext.beginFrame()
-
-    // 2. Background Grid (Optional)
-    if (options?.showGrid) {
-      canvas.save()
-      const bounds = canvas.getDeviceClipBounds()
-      renderInfiniteGrid(ck, canvas, viewport, bounds[2] ?? 0, bounds[3] ?? 0)
-      canvas.restore()
-    }
-
-    // 3. Compute Layouts
-    this.computeAllLayouts()
-
-    // 4. Render Nodes
-    this.walk((node, absRect) => {
-      if (node.type === 'view') {
-        renderView(ck, canvas, node.style as ViewStyle, absRect, node.scroll, undefined, this.drawContext)
-      } else if (node.type === 'text') {
-        renderText(ck, canvas, node.style as TextStyle, absRect, node.text || '', this.fonts, undefined, this.drawContext)
-      } else if (node.type === 'image') {
-        renderImage(ck, canvas, node.style as ImageStyle, absRect, node.image || null, this.drawContext)
-      }
-
-      // 5. Interactive Overlays (Optional)
-      if (options?.interactionState) {
-        const state = options.interactionState
-        const isHovered = state.hoveredNode?.id === node.id || state.hoveredNode?.id === node.parent?.id
-        const isSelected = state.selectedNodes.has(node.id)
-
-        if (isHovered && node.id !== '_root') {
-          drawHoverHighlight(ck, canvas, absRect, viewport.zoom)
-        }
-        if (isSelected) {
-          drawSelectionHighlight(ck, canvas, absRect, viewport.zoom)
-        }
-      }
-    })
-
-    // 6. Global Overlays (Marquee, Placement Ghost)
-    if (options?.interactionState?.isBoxSelecting && options.interactionState.selectionBox) {
-      drawMarqueeSelection(ck, canvas, options.interactionState.selectionBox, viewport.zoom)
-    }
-
-    if (options?.placementGhost) {
-      drawPlacementGhost(
-        ck,
-        canvas,
-        options.placementGhost,
-        viewport.zoom,
-        options.placementGhost.overlap ?? false,
-      )
-    }
-  }
 
   public hitTest(worldX: number, worldY: number): SceneNode | null {
     const candidates = this.spatialIndex.getCandidatesAtPoint(worldX, worldY)
@@ -436,7 +470,7 @@ export class SceneGraph {
   public boxTest(worldRect: LayoutRect): SceneNode[] {
     const candidates = this.spatialIndex.getCandidatesInRect(worldRect)
     const hits: SceneNode[] = []
-    const threshold = 0.8
+    const threshold = 0.0 // Any intersection selects
 
     for (const node of candidates) {
       const ratio = this.getIntersectionRatio(worldRect, node.worldRect)
@@ -449,15 +483,17 @@ export class SceneGraph {
     // 1. Children if their parent is also selected
     // 2. ROOT nodes (Screens themselves) - Figma-like box selection only picks nodes inside screens
     const topMostHits: SceneNode[] = []
-    for (const node of hits) {
-      // Is this a root node of a screen? Screen nodes themselves shouldn't be box-selected
-      const isScreenRoot = Array.from(this.screens.values()).some((s) => s.root.id === node.id)
-      if (isScreenRoot) continue
+    
+    // First, identify which of the hits are "selectable" (non-screen roots)
+    const selectableHits = hits.filter(node => 
+      !Array.from(this.screens.values()).some((s) => s.root.id === node.id)
+    )
 
+    for (const node of selectableHits) {
       let parentSelected = false
       let curr = node.parent
       while (curr) {
-        if (hits.includes(curr)) {
+        if (selectableHits.includes(curr)) {
           parentSelected = true
           break
         }
@@ -482,7 +518,7 @@ export class SceneGraph {
   public async importProject(project: SerializedProject): Promise<void> {
     this.dispose()
     for (const s of project.screens) {
-      const screen = this.addScreen(s.id, s.x, s.y, s.width, s.height)
+      const screen = this.addScreen(s.id, s.name, s.x, s.y, s.width, s.height)
       this.applyStyle(screen.root, s.root.style)
       for (const childData of s.root.children) {
         const child = await this.reconstructNode(childData)
@@ -534,6 +570,7 @@ export class SceneGraph {
       }
     }
   }
+
 
   private readLayout(node: SceneNode, parentAbsX: number, parentAbsY: number): void {
     const layout = node.yogaNode.getComputedLayout()

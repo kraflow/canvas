@@ -17,6 +17,7 @@ export interface InteractionState {
 export type InteractionEventType =
   | 'click'
   | 'hover'
+  | 'move'
   | 'dragStart'
   | 'dragMove'
   | 'dragEnd'
