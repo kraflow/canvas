@@ -20,7 +20,14 @@ export type InteractionEventType =
   | 'dragStart'
   | 'dragMove'
   | 'dragEnd'
+  | 'panningStart'
+  | 'panningMove'
+  | 'panningEnd'
+  | 'boxSelectStart'
+  | 'boxSelectMove'
+  | 'boxSelectEnd'
   | 'scroll'
+  | 'modeChange'
 
 export interface InteractionEvent {
   type: InteractionEventType

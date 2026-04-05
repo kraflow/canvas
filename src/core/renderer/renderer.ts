@@ -113,6 +113,19 @@ export class CanvasRenderer {
   }
 
   /**
+   * Requests a single animation frame to be drawn.
+   * If an animation loop is already running, this does nothing.
+   */
+  public requestFrame(): void {
+    if (this.isAnimating || this.rafId !== null) return
+
+    this.rafId = requestAnimationFrame(() => {
+      this.rafId = null
+      this.draw()
+    })
+  }
+
+  /**
    * The animation frame callback.
    * @private
    */

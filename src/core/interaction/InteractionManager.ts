@@ -43,6 +43,7 @@ export class InteractionManager {
   }
 
   public setMode(mode: InteractionMode) {
+    const oldMode = this.state.mode
     this.state.mode = mode
     this.state.isPanning = false
     this.state.isDragging = false
@@ -50,6 +51,10 @@ export class InteractionManager {
     this.state.draggedNode = null
     this.state.selectionBox = null
     this.state.hoveredNode = null
+
+    if (oldMode !== mode) {
+      this.dispatch('modeChange', null, new PointerEvent('pointermove'), 0, 0)
+    }
   }
 
   public on(callback: InteractionCallback) {
@@ -84,6 +89,7 @@ export class InteractionManager {
 
     if (this.state.mode === 'move') {
       this.state.isPanning = true
+      this.dispatch('panningStart', null, e, worldPoint.x, worldPoint.y)
       return
     }
 
@@ -112,6 +118,7 @@ export class InteractionManager {
       if (!e.shiftKey) {
         this.state.selectedNodes.clear()
       }
+      this.dispatch('boxSelectStart', null, e, worldPoint.x, worldPoint.y)
     }
   }
 
@@ -124,6 +131,7 @@ export class InteractionManager {
       const screenDx = e.clientX - this.lastMouseX
       const screenDy = e.clientY - this.lastMouseY
       this.viewport.translate(screenDx, screenDy)
+      this.dispatch('panningMove', null, e, worldPoint.x, worldPoint.y)
     } else if (this.state.isBoxSelecting) {
       this.state.selectionBox = {
         x: Math.min(this.boxStartPoint.x, worldPoint.x),
@@ -131,6 +139,7 @@ export class InteractionManager {
         w: Math.abs(worldPoint.x - this.boxStartPoint.x),
         h: Math.abs(worldPoint.y - this.boxStartPoint.y),
       }
+      this.dispatch('boxSelectMove', null, e, worldPoint.x, worldPoint.y)
     } else if (this.state.isDragging && this.state.draggedNode) {
       // MOVE ALL SELECTED NODES
       for (const id of this.state.selectedNodes) {
@@ -156,11 +165,23 @@ export class InteractionManager {
     this.lastMouseY = e.clientY
   }
 
-  private handlePointerUp = (_e: PointerEvent) => {
+  private handlePointerUp = (e: PointerEvent) => {
+    const worldPoint = this.getEventWorldPoint(e)
+
     if (this.state.isBoxSelecting && this.state.selectionBox) {
       const hits = this.scene.boxTest(this.state.selectionBox)
       hits.forEach((h) => this.state.selectedNodes.add(h.id))
+      this.dispatch('boxSelectEnd', null, e, worldPoint.x, worldPoint.y)
     }
+
+    if (this.state.isPanning) {
+      this.dispatch('panningEnd', null, e, worldPoint.x, worldPoint.y)
+    }
+
+    if (this.state.isDragging) {
+      this.dispatch('dragEnd', this.state.draggedNode, e, worldPoint.x, worldPoint.y)
+    }
+
     this.state.isPanning = false
     this.state.isDragging = false
     this.state.isBoxSelecting = false

@@ -545,13 +545,35 @@ onMounted(async () => {
     })
 
     await renderer.initialize()
-    renderer.setAnimating(true)
+    renderer.requestFrame() // Initial draw
 
     // ── Interaction manager ──────────────────────────────────────────────────
     interactionManager.value = new InteractionManager(canvasRef.value, scene, viewport)
     interactionManager.value.on((e) => {
-      if (e.type === 'click' && e.node) {
-        console.log('[SceneGraphDemo] Clicked node:', e.node.id, e.node.type)
+      if (!renderer) return
+
+      switch (e.type) {
+        case 'dragStart':
+        case 'panningStart':
+        case 'boxSelectStart':
+        case 'scroll':
+        case 'hover':
+        case 'modeChange':
+          renderer.requestFrame()
+          break
+
+        case 'dragEnd':
+        case 'panningEnd':
+        case 'boxSelectEnd':
+          renderer.setAnimating(false)
+          renderer.requestFrame() // One last frame to clear overlays/final state
+          break
+
+        case 'click':
+          if (e.node) {
+            console.log('[SceneGraphDemo] Clicked node:', e.node.id, e.node.type)
+          }
+          break
       }
     })
 
