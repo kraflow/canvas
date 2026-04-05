@@ -75,4 +75,20 @@ export class Viewport {
     this.state.x += (afterWorld.x - beforeWorld.x) * this.state.zoom
     this.state.y += (afterWorld.y - beforeWorld.y) * this.state.zoom
   }
+
+  /**
+   * Returns the visible world-space bounding box.
+   */
+  public getVisibleBounds(screenWidth: number, screenHeight: number) {
+    const topLeft = this.screenToWorld(0, 0, { left: 0, top: 0 } as DOMRect)
+    const bottomRight = this.screenToWorld(screenWidth, screenHeight, { left: 0, top: 0 } as DOMRect)
+    return {
+      left: topLeft.x,
+      top: topLeft.y,
+      right: bottomRight.x,
+      bottom: bottomRight.y,
+      width: bottomRight.x - topLeft.x,
+      height: bottomRight.y - topLeft.y,
+    }
+  }
 }

@@ -194,9 +194,11 @@ export class InteractionManager {
     const canvasRect = this.canvas.getBoundingClientRect()
 
     if (e.ctrlKey || e.metaKey) {
+      // 1. Pinch-to-zoom (most browsers send ctrlKey for trackpad pinch)
       const zoomDelta = 1 - e.deltaY * 0.01
       this.viewport.zoomAtPoint(zoomDelta, e.clientX, e.clientY, canvasRect)
     } else {
+      // 2. Two-finger pan (standard wheel/scroll)
       this.viewport.translate(-e.deltaX, -e.deltaY)
     }
 

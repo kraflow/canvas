@@ -1,6 +1,7 @@
 import type { Canvas, CanvasKit, Surface } from 'canvaskit-wasm'
 import type { RendererOptions } from './types'
 import { loadCanvasKit } from './load'
+import type { Viewport } from '../viewport/Viewport'
 
 /**
  * CanvasRenderer handles the initialization and rendering lifecycle of a CanvasKit-based canvas.
@@ -9,13 +10,14 @@ import { loadCanvasKit } from './load'
 export class CanvasRenderer {
   private surface: Surface | null = null
   private canvas: HTMLCanvasElement | null = null
-  private ck: CanvasKit | null = null
+  public ck: CanvasKit | null = null
   private isAnimating = false
   private rafId: number | null = null
   private onDraw: ((canvas: Canvas, ck: CanvasKit) => void) | null = null
   private width = 0
   private height = 0
   private pixelRatio = window.devicePixelRatio || 1
+  private viewport: Viewport | null = null
 
   /**
    * Creates a new CanvasRenderer instance.
@@ -24,8 +26,13 @@ export class CanvasRenderer {
   constructor(options: RendererOptions) {
     this.canvas = options.canvas
     this.onDraw = options.onDraw || null
+    this.viewport = options.viewport || null
     this.width = this.canvas.clientWidth
     this.height = this.canvas.clientHeight
+  }
+
+  public setViewport(viewport: Viewport): void {
+    this.viewport = viewport
   }
 
   /**
@@ -152,6 +159,11 @@ export class CanvasRenderer {
     canvas.clear(this.ck.TRANSPARENT)
     canvas.save()
     canvas.scale(this.pixelRatio, this.pixelRatio)
+
+    if (this.viewport) {
+      canvas.translate(this.viewport.x, this.viewport.y)
+      canvas.scale(this.viewport.zoom, this.viewport.zoom)
+    }
 
     this.onDraw(canvas, this.ck)
 

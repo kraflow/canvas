@@ -1,227 +1,102 @@
 # Scene Graph
 
-The scene graph manages a tree of UI nodes with Yoga layout. It is fully **decoupled from the renderer** — it provides a `walk()` function that you call in your `onDraw` callback.
+The scene graph manages a tree of UI nodes with Yoga layout and provides high-performance spatial querying (hit-testing).
 
-## Core Concepts
+## SceneGraph Class
 
-| Concept        | Description                                                                  |
-| -------------- | ---------------------------------------------------------------------------- |
-| **SceneGraph** | Manages multiple screens. Provides `walk()` for traversal                    |
-| **ScreenNode** | Root container at a custom `(x, y)` on the infinite canvas. Not Yoga-managed |
-| **SceneNode**  | A node with type, style, children, and an attached Yoga node                 |
-| **Yoga node**  | Layout engine node attached to each SceneNode. Computes position/size        |
-| **rect**       | Computed `{ x, y, w, h }` from Yoga's `getComputedLayout()`                  |
-| **walk()**     | DFS traversal that yields each node with its absolute canvas rect            |
-
-## Creating a Scene Graph
-
-Creating a `SceneGraph` requires `CanvasKit` and a `FontSystem` instance. These are used for accurate text measurement during layout.
+The `SceneGraph` is the central manager for all hierarchical UI elements.
 
 ```ts
 import { SceneGraph } from '@/core/scene'
+```
 
-// Loads Yoga WASM and initializes measurement hooks
+### Static Initialization
+
+```ts
+// Requires CanvasKit and a FontSystem for text measurement
 const scene = await SceneGraph.create(ck, fonts)
 ```
 
-> **Important:** All yoga imports use `yoga-layout/load` (the async entry) to avoid top-level await issues with Vite.
+---
 
-## Screens
+## Screen Management
 
-A Screen is a root-level container positioned freely on the infinite canvas. Each screen has its own Yoga layout tree.
-
-```ts
-// Add a screen at canvas position (100, 50) with size 400×600
-const screen = scene.addScreen('main', 100, 50, 400, 600)
-
-// Move it
-scene.moveScreen('main', 200, 100)
-
-// Resize it (marks layout as dirty)
-scene.resizeScreen('main', 500, 700)
-
-// Remove it (frees all Yoga nodes)
-scene.removeScreen('main')
-```
-
-Access screens:
+A **Screen** is a root-level container positioned freely on the infinite world-space canvas. Screens are the top-most level of the scene graph.
 
 ```ts
-const screen = scene.getScreen('main')
+// Add a screen at world coordinates (0, 0) with a 400x800 size
+const screen = scene.addScreen('home', 0, 0, 400, 800)
 
-for (const screen of scene.allScreens) {
-  console.log(screen.id, screen.x, screen.y)
-}
+// Move a screen (updates children worldRects)
+scene.moveScreen('home', 100, 200)
+
+// Resize a screen (triggers layout recomputation)
+scene.resizeScreen('home', 500, 900)
+
+// Remove a screen and its children
+scene.removeScreen('home')
 ```
 
-## Nodes
+---
 
-### Node Types
+## Node Management
 
-| Type      | Style        | Extra Fields              |
-| --------- | ------------ | ------------------------- |
-| `'view'`  | `ViewStyle`  | `scroll?: ScrollPosition` |
-| `'text'`  | `TextStyle`  | `text?: string`           |
-| `'image'` | `ImageStyle` | `image?: Image \| null`   |
+**Nodes** are the building blocks of your UI.
 
-### Creating Nodes
+| Node Type | Style        | Content                  |
+| --------- | ------------ | ------------------------ |
+| `view`    | `ViewStyle`  | Children, Scroll         |
+| `text`    | `TextStyle`  | `text` string            |
+| `image`   | `ImageStyle` | `SkImage` from cache     |
+
+### Operations
 
 ```ts
-// Creates a detached node (not in the tree yet)
-const card = scene.createNode('view', {
-  backgroundColor: Float32Array.from([0.1, 0.1, 0.15, 1]),
-  borderRadius: 16,
-  padding: 20,
-  flexDirection: 'column',
-  gap: 12,
-})
+// Create (detached)
+const box = scene.createNode('view', { width: 100, height: 100, backgroundColor: 'blue' })
+
+// Parent-Child
+scene.appendChild(parent, child)
+scene.insertChild(parent, child, index)
+scene.removeChild(parent, child)
+
+// Content
+scene.setText(textNode, 'New Text Content')
+scene.applyStyle(node, { ...node.style, opacity: 0.5 })
+
+// Compute and Traversals
+scene.computeAllLayouts() // Must call before rendering
+scene.walk((node, absoluteRect) => { /* Render node */ })
 ```
 
-Style properties are automatically synced to the Yoga node — flexDirection, width, height, padding, margin, gap, position, etc.
+---
 
-### Tree Operations
+## Hit-Testing & Spatial Index
+
+The `SceneGraph` maintains a `SpatialIndex` that is rebuilt every time `computeAllLayouts()` is called. This allows for extremely fast intersection queries even with thousands of nodes.
+
+### `hitTest(worldX, worldY): SceneNode | null`
+Returns the front-most node at the given world-space coordinates. Respects `pointerEvents: 'none'` styles.
+
+### `boxTest(worldRect): SceneNode[]`
+Returns all top-most nodes that intersect with the given world-space marquee selection box. Useful for multi-select.
+
+---
+
+## Serialization & Project Management
+
+You can export and import the entire scene graph state, which is useful for undo/redo and saving projects.
 
 ```ts
-// Append
-scene.appendChild(screen.root, card)
+// Export everything as a JSON-compatible object
+const projectData = scene.exportProject()
 
-// Insert at index
-scene.insertChild(screen.root, card, 0)
-
-// Remove (detaches from parent, does NOT free Yoga node)
-scene.removeChild(screen.root, card)
-
-// Destroy a detached node (frees Yoga resources)
-scene.destroyNode(card)
+// Reconstruct the scene graph (clears current state)
+await scene.importProject(projectData)
 ```
 
-### Setting Content
+---
 
-```ts
-// Text nodes (Width/Height is automatically measured if not fixed)
-const title = scene.createNode('text', {
-  color: Float32Array.from([1, 1, 1, 1]),
-  fontSize: 24,
-  fontWeight: 700,
-  fontFamily: 'Inter',
-})
-scene.setText(title, 'Hello World')
-scene.appendChild(card, title)
+## Syncing Layout with Yoga
 
-// Image nodes
-const img = scene.createNode('image', {
-  borderRadius: 12,
-  overflow: 'hidden',
-  height: 200,
-})
-img.image = await imageCache.load('https://example.com/photo.jpg')
-scene.appendChild(card, img)
-```
-
-### Updating Styles
-
-The `applyStyle()` method is layout-aware. It only triggers a Yoga re-sync if layout properties (like `padding` or `width`) change. Updating purely visual properties (like `backgroundColor`) only triggers a redraw.
-
-```ts
-scene.applyStyle(card, {
-  ...card.style,
-  backgroundColor: Float32Array.from([0.2, 0.2, 0.25, 1]), // Redraw only
-  padding: 32, // Re-sync Yoga + Redraw
-})
-```
-
-## Layout Computation
-
-Layout is computed per-screen using Yoga's flexbox engine.
-
-```ts
-// Compute all dirty screens
-scene.computeAllLayouts()
-```
-
-After computation, each node's `rect` is populated with its Yoga-computed position and size (relative to parent).
-
-**Dirty tracking:** Screens are automatically marked dirty when:
-
-- Nodes are added/removed
-- Styles are updated via `applyStyle()`
-- Text content is updated via `setText()`
-- Screen is resized via `resizeScreen()`
-
-## Walking the Tree (Rendering)
-
-The `walk()` function traverses all screens and nodes in DFS order, computing **absolute** canvas coordinates:
-
-```ts
-scene.walk((node, absoluteRect) => {
-  // absoluteRect = { x, y, w, h } in canvas coordinates
-})
-```
-
-### Typical Render Loop
-
-```ts
-function onDraw(canvas: Canvas, ck: CanvasKit) {
-  drawCtx.beginFrame()
-
-  scene.walk((node, rect) => {
-    switch (node.type) {
-      case 'view':
-        renderView(ck, canvas, node.style as ViewStyle, rect, node.scroll, undefined, drawCtx)
-        break
-      case 'text':
-        renderText(ck, canvas, node.style as TextStyle, rect, node.text ?? '', fonts, null, drawCtx)
-        break
-      case 'image':
-        renderImage(ck, canvas, node.style as ImageStyle, rect, node.image ?? null, drawCtx)
-        break
-    }
-  })
-}
-```
-
-### Walk a Single Screen
-
-```ts
-scene.walkScreen(screen, (node, rect) => {
-  // Only this screen's nodes
-})
-```
-
-## Style → Yoga Mapping
-
-The `syncStyleToYoga()` function maps all `FlexStyle` properties to Yoga node setters:
-
-| Style Property                                      | Yoga Setter                                                         |
-| --------------------------------------------------- | ------------------------------------------------------------------- |
-| `flexDirection`                                     | `setFlexDirection()`                                                |
-| `flexWrap`                                          | `setFlexWrap()`                                                     |
-| `justifyContent`                                    | `setJustifyContent()`                                               |
-| `alignItems` / `alignContent` / `alignSelf`         | `setAlignItems()` / etc.                                            |
-| `flex` / `flexGrow` / `flexShrink` / `flexBasis`    | `setFlex()` / etc.                                                  |
-| `width` / `height`                                  | `setWidth()` / `setHeight()` (supports `number`, `'auto'`, `'50%'`) |
-| `minWidth` / `maxWidth` / `minHeight` / `maxHeight` | corresponding setters                                               |
-| `padding` / `paddingTop` / etc.                     | `setPadding(edge, value)`                                           |
-| `margin` / `marginTop` / etc.                       | `setMargin(edge, value)` (supports `'auto'`)                        |
-| `position` / `top` / `bottom` / `left` / `right`    | `setPositionType()` / `setPosition()`                               |
-| `borderWidth` / `borderTopWidth` / etc.             | `setBorder(edge, value)`                                            |
-| `gap` / `rowGap` / `columnGap`                      | `setGap(gutter, value)`                                             |
-| `display`                                           | `setDisplay()`                                                      |
-| `overflow`                                          | `setOverflow()`                                                     |
-| `aspectRatio`                                       | `setAspectRatio()` (supports `'16/9'` string)                       |
-| `boxSizing`                                         | `setBoxSizing()`                                                    |
-
-## Cleanup
-
-```ts
-// Frees ALL Yoga nodes across all screens
-scene.dispose()
-```
-
-## Limitations (Current)
-
-| Feature           | Status                         |
-| ----------------- | ------------------------------ |
-| zIndex            | Not yet — DFS tree order only  |
-| Event hit testing | Not yet — planned reverse-walk |
-| Scroll indicators | Not yet                        |
+When `applyStyle()` is called, the `SceneGraph` automatically detects if the change affects layout (e.g., `padding`, `width`, `flexDirection`). If it does, the Yoga node is updated, and the screen is marked as dirty for the next `computeAllLayouts()` call.

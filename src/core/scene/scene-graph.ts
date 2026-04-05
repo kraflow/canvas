@@ -20,6 +20,23 @@ import { ImageCache } from '@/core/renderer/draw/image-cache'
 import { toSerializableScreen } from './serialization'
 import type { StyleProp } from '@/core/styles'
 import { SpatialIndex } from './SpatialIndex'
+import { DrawContext, renderView, renderText, renderImage, renderInfiniteGrid } from '@/core/renderer/draw'
+import { drawHoverHighlight, drawSelectionHighlight, drawMarqueeSelection, drawPlacementGhost } from '@/core/renderer/draw/overlays'
+import type { InteractionState } from '@/core/interaction/types'
+import type { Viewport } from '@/core/viewport/Viewport'
+import type { Canvas } from 'canvaskit-wasm'
+
+export interface RenderOptions {
+  showGrid?: boolean
+  interactionState?: InteractionState
+  placementGhost?: {
+    x: number
+    y: number
+    w: number
+    h: number
+    overlap?: boolean
+  }
+}
 
 /** Properties that, when changed, require a Yoga layout recomputation. */
 const LAYOUT_PROPS = new Set([
@@ -91,6 +108,7 @@ export class SceneGraph {
   private readonly screens = new Map<string, ScreenNode>()
   private readonly nodes = new Map<string, SceneNode>()
   private readonly spatialIndex = new SpatialIndex()
+  private readonly drawContext: DrawContext
   private nextId = 1
 
   private constructor(yoga: Yoga, ck: CanvasKit, fonts: FontSystem) {
@@ -98,6 +116,7 @@ export class SceneGraph {
     this.ck = ck
     this.fonts = fonts
     this.imageCache = new ImageCache(ck)
+    this.drawContext = new DrawContext(ck)
   }
 
   public static async create(ck: CanvasKit, fonts: FontSystem): Promise<SceneGraph> {
@@ -332,6 +351,66 @@ export class SceneGraph {
     }
   }
 
+  /**
+   * Renders the entire scene graph onto the provided CanvasKit canvas.
+   * Handles layout computation, node drawing (View, Text, Image), and optional overlays.
+   */
+  public render(canvas: Canvas, ck: CanvasKit, viewport: Viewport, options?: RenderOptions): void {
+    // 1. Initial Setup
+    this.drawContext.beginFrame()
+
+    // 2. Background Grid (Optional)
+    if (options?.showGrid) {
+      canvas.save()
+      const bounds = canvas.getDeviceClipBounds()
+      renderInfiniteGrid(ck, canvas, viewport, bounds[2] ?? 0, bounds[3] ?? 0)
+      canvas.restore()
+    }
+
+    // 3. Compute Layouts
+    this.computeAllLayouts()
+
+    // 4. Render Nodes
+    this.walk((node, absRect) => {
+      if (node.type === 'view') {
+        renderView(ck, canvas, node.style as ViewStyle, absRect, node.scroll, undefined, this.drawContext)
+      } else if (node.type === 'text') {
+        renderText(ck, canvas, node.style as TextStyle, absRect, node.text || '', this.fonts, undefined, this.drawContext)
+      } else if (node.type === 'image') {
+        renderImage(ck, canvas, node.style as ImageStyle, absRect, node.image || null, this.drawContext)
+      }
+
+      // 5. Interactive Overlays (Optional)
+      if (options?.interactionState) {
+        const state = options.interactionState
+        const isHovered = state.hoveredNode?.id === node.id || state.hoveredNode?.id === node.parent?.id
+        const isSelected = state.selectedNodes.has(node.id)
+
+        if (isHovered && node.id !== '_root') {
+          drawHoverHighlight(ck, canvas, absRect, viewport.zoom)
+        }
+        if (isSelected) {
+          drawSelectionHighlight(ck, canvas, absRect, viewport.zoom)
+        }
+      }
+    })
+
+    // 6. Global Overlays (Marquee, Placement Ghost)
+    if (options?.interactionState?.isBoxSelecting && options.interactionState.selectionBox) {
+      drawMarqueeSelection(ck, canvas, options.interactionState.selectionBox, viewport.zoom)
+    }
+
+    if (options?.placementGhost) {
+      drawPlacementGhost(
+        ck,
+        canvas,
+        options.placementGhost,
+        viewport.zoom,
+        options.placementGhost.overlap ?? false,
+      )
+    }
+  }
+
   public hitTest(worldX: number, worldY: number): SceneNode | null {
     const candidates = this.spatialIndex.getCandidatesAtPoint(worldX, worldY)
     if (candidates.length === 0) return null
@@ -366,9 +445,15 @@ export class SceneGraph {
       }
     }
 
-    // Filter out children if their parent is also selected
+    // Filter out:
+    // 1. Children if their parent is also selected
+    // 2. ROOT nodes (Screens themselves) - Figma-like box selection only picks nodes inside screens
     const topMostHits: SceneNode[] = []
     for (const node of hits) {
+      // Is this a root node of a screen? Screen nodes themselves shouldn't be box-selected
+      const isScreenRoot = Array.from(this.screens.values()).some((s) => s.root.id === node.id)
+      if (isScreenRoot) continue
+
       let parentSelected = false
       let curr = node.parent
       while (curr) {
@@ -426,6 +511,7 @@ export class SceneGraph {
     this.nodes.clear()
     this.spatialIndex.clear()
     this.textMeasureCache.clear()
+    this.drawContext.dispose()
   }
 
   // ─────────────────────────────────────────────────────────────────────────

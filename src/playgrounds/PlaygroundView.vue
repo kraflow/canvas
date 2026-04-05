@@ -1,86 +1,297 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, shallowRef, onMounted, onUnmounted, watch, computed } from 'vue'
+import { CanvasRenderer } from '@/core/renderer/renderer'
+import { Viewport } from '@/core/viewport/Viewport'
+import { SceneGraph } from '@/core/scene/scene-graph'
+import { InteractionManager } from '@/core/interaction/InteractionManager'
+import { createFontSystem } from '@/core/fonts'
+import {
+  DEFAULT_SCREEN_WIDTH,
+  DEFAULT_SCREEN_HEIGHT,
+  COLORS,
+  DEFAULT_NODE_SPACING,
+  DEFAULT_NODE_PADDING,
+  DEFAULT_NODE_RADIUS,
+} from './constants'
+import { defaultFontManifest } from './font-manifest'
+import type { Canvas, CanvasKit } from 'canvaskit-wasm'
+import type { SceneNode, SerializedProject } from '@/core/scene/types'
+import type { InteractionEvent } from '@/core/interaction/types'
 
-// Basic node and screen types for UI state
-interface Node {
-  id: string
-  type: 'view' | 'text' | 'image'
-  name: string
-}
-
-interface Screen {
-  id: string
-  name: string
-  nodes: Node[]
-}
-
+// History state
 interface HistoryState {
-  screens: Screen[]
+  project: SerializedProject
 }
 
-const screens = ref<Screen[]>([])
+// Core
+const canvasRef = ref<HTMLCanvasElement | null>(null)
+const scene = shallowRef<SceneGraph | null>(null)
+const interaction = shallowRef<InteractionManager | null>(null)
+const renderer = shallowRef<CanvasRenderer | null>(null)
+const viewport = new Viewport({ x: 0, y: 0, zoom: 1 })
+
+// UI State
+const zoomLevel = ref(100)
+const cursorCoords = ref({ x: 0, y: 0 })
 const history = ref<HistoryState[]>([])
 const redoStack = ref<HistoryState[]>([])
 
+// Placement State
+const isPlacingScreen = ref(false)
+const ghostScreenPos = ref({ x: 0, y: 0 })
+const ghostOverlap = ref(false)
+
+// Interaction Mode State (bridged to InteractionManager)
+const interactionMode = ref<'edit' | 'move' | 'play'>('edit')
+const selectedNodeIds = ref<Set<string>>(new Set())
+const hoveredNodeId = ref<string | null>(null)
+
 // Actions
-const addScreen = () => {
-  const newScreen: Screen = {
-    id: Math.random().toString(36).substr(2, 9),
-    name: `Screen ${screens.value.length + 1}`,
-    nodes: [],
-  }
-  saveToHistory()
-  screens.value.push(newScreen)
+const startPlacingScreen = () => {
+  isPlacingScreen.value = true
 }
 
-const addNode = (type: 'view' | 'text' | 'image', screenId?: string) => {
-  if (screens.value.length === 0) {
-    addScreen()
+const cancelPlacement = () => {
+  isPlacingScreen.value = false
+}
+
+const checkOverlap = (x: number, y: number, w: number, h: number) => {
+  if (!scene.value) return false
+  for (const s of scene.value.allScreens) {
+    if (x < s.x + s.width && x + w > s.x && y < s.y + s.height && y + h > s.y) return true
   }
-  const targetScreen = screenId ? screens.value.find((s) => s.id === screenId) : screens.value[0]
-  if (targetScreen) {
-    const newNode: Node = {
-      id: Math.random().toString(36).substr(2, 9),
-      type,
-      name: `${type.charAt(0).toUpperCase() + type.slice(1)} ${targetScreen.nodes.length + 1}`,
+  return false
+}
+
+const addScreenAt = (x: number, y: number) => {
+  if (!scene.value) return
+  const w = DEFAULT_SCREEN_WIDTH
+  const h = DEFAULT_SCREEN_HEIGHT
+  if (checkOverlap(x, y, w, h)) {
+    console.warn('Overlap detected')
+    return
+  }
+
+  saveToHistory()
+  scene.value.addScreen(Math.random().toString(36).substr(2, 9), x, y, w, h)
+  isPlacingScreen.value = false
+  renderer.value?.requestFrame()
+}
+
+const addNode = (type: 'view' | 'text' | 'image') => {
+  if (!scene.value) return
+
+  // 1. Determine parent
+  let parent: SceneNode | null = null
+  const selectedIds = interaction.value?.getState().selectedNodes || new Set()
+
+  if (selectedIds.size === 1) {
+    const id = Array.from(selectedIds)[0]
+    const target = scene.value.getNodeById(id)
+    if (target) {
+      // If it's a view or root, it's a valid parent
+      parent = target
+    } else {
+      const screen = scene.value.getScreen(id)
+      if (screen) parent = screen.root as SceneNode
     }
-    saveToHistory()
-    targetScreen.nodes.push(newNode)
   }
+
+  // 2. Default to first screen if no parent found
+  if (!parent) {
+    const screens = Array.from(scene.value.allScreens)
+    const firstScreen = screens[0]
+    if (!firstScreen) {
+      startPlacingScreen()
+      return
+    }
+    parent = firstScreen.root
+  }
+
+  saveToHistory()
+  const newNode = scene.value.createNode(type, {
+    backgroundColor: type === 'view' ? COLORS.VIEW.bg : undefined,
+    width: parent.rect.w - DEFAULT_NODE_SPACING * 2,
+    height: 50,
+    margin: DEFAULT_NODE_SPACING,
+    padding: DEFAULT_NODE_PADDING,
+    borderRadius: DEFAULT_NODE_RADIUS,
+    borderWidth: 1.5,
+    borderColor:
+      type === 'view'
+        ? COLORS.VIEW.border
+        : type === 'text'
+          ? COLORS.TEXT.border
+          : COLORS.IMAGE.border,
+  } as any)
+
+  if (type === 'text') {
+    scene.value.setText(newNode, 'New Text Layer')
+    scene.value.applyStyle(newNode, { color: COLORS.TEXT.color, fontSize: 16 } as any)
+  }
+
+  scene.value.appendChild(parent, newNode)
+  renderer.value?.requestFrame()
 }
 
 const undo = () => {
-  if (history.value.length > 0) {
-    const currentState: HistoryState = JSON.parse(JSON.stringify({ screens: screens.value }))
-    redoStack.value.push(currentState)
-    const previousState = history.value.pop()!
-    screens.value = previousState.screens
+  if (history.value.length > 0 && scene.value) {
+    const project = scene.value.exportProject()
+    redoStack.value.push({ project })
+    const prev = history.value.pop()!
+    scene.value.importProject(prev.project)
+    renderer.value?.requestFrame()
   }
 }
 
 const redo = () => {
-  if (redoStack.value.length > 0) {
-    const currentState: HistoryState = JSON.parse(JSON.stringify({ screens: screens.value }))
-    history.value.push(currentState)
-    const nextState = redoStack.value.pop()!
-    screens.value = nextState.screens
+  if (redoStack.value.length > 0 && scene.value) {
+    const project = scene.value.exportProject()
+    history.value.push({ project })
+    const next = redoStack.value.pop()!
+    scene.value.importProject(next.project)
+    renderer.value?.requestFrame()
   }
 }
 
 const saveToHistory = () => {
-  history.value.push(JSON.parse(JSON.stringify({ screens: screens.value })))
-  redoStack.value = [] // Clear redo stack on new action
+  if (scene.value) {
+    history.value.push({ project: scene.value.exportProject() })
+    redoStack.value = []
+  }
 }
 
-onMounted(() => {
-  // Initialize with one screen
-  // addScreen()
+// Drawing logic
+const onDraw = (canvas: Canvas, ck: CanvasKit) => {
+  if (!canvasRef.value || !scene.value) return
+
+  scene.value.render(canvas, ck, viewport, {
+    showGrid: true,
+    interactionState: interaction.value?.getState(),
+    placementGhost: isPlacingScreen.value
+      ? {
+          x: ghostScreenPos.value.x,
+          y: ghostScreenPos.value.y,
+          w: DEFAULT_SCREEN_WIDTH,
+          h: DEFAULT_SCREEN_HEIGHT,
+          overlap: ghostOverlap.value,
+        }
+      : undefined,
+  })
+}
+
+onMounted(async () => {
+  if (!canvasRef.value) return
+
+  // 1. Initialize Renderer
+  renderer.value = new CanvasRenderer({
+    canvas: canvasRef.value,
+    viewport: viewport,
+    onDraw: onDraw,
+  })
+  await renderer.value.initialize()
+  const ck = renderer.value.ck
+
+  // 2. Initialize Core Engine
+  const fonts = await createFontSystem(ck!, defaultFontManifest)
+  scene.value = await SceneGraph.create(ck!, fonts)
+  interaction.value = new InteractionManager(canvasRef.value, scene.value, viewport)
+
+  // 3. Setup Interaction Listeners
+  interaction.value.on((e: InteractionEvent) => {
+    const state = interaction.value!.getState()
+    interactionMode.value = state.mode
+    selectedNodeIds.value = state.selectedNodes
+    hoveredNodeId.value = state.hoveredNode?.id || null
+
+    if (e.type === 'modeChange') {
+      interactionMode.value = state.mode
+    }
+
+    if (e.type === 'modeChange' || e.type.includes('Move') || e.type.includes('Start') || e.type.includes('End') || e.type === 'hover' || e.type === 'scroll') {
+      renderer.value?.requestFrame()
+    }
+
+    if (e.type === 'modeChange' || e.type === 'scroll') {
+      zoomLevel.value = Math.round(viewport.zoom * 100)
+    }
+
+    if (e.worldX !== 0 || e.worldY !== 0) {
+      cursorCoords.value = { x: Math.round(e.worldX), y: Math.round(e.worldY) }
+      
+      if (isPlacingScreen.value) {
+        ghostScreenPos.value = {
+          x: Math.round(e.worldX - DEFAULT_SCREEN_WIDTH / 2),
+          y: Math.round(e.worldY - DEFAULT_SCREEN_HEIGHT / 2),
+        }
+        ghostOverlap.value = checkOverlap(
+          ghostScreenPos.value.x,
+          ghostScreenPos.value.y,
+          DEFAULT_SCREEN_WIDTH,
+          DEFAULT_SCREEN_HEIGHT,
+        )
+      }
+    }
+  })
+
+  // 4. Placement Handler
+  canvasRef.value.addEventListener('mousedown', (e) => {
+    if (isPlacingScreen.value && e.button === 0) {
+      if (!ghostOverlap.value) {
+        addScreenAt(ghostScreenPos.value.x, ghostScreenPos.value.y)
+      }
+    }
+  })
+
+  // 5. Initial Frame
+  renderer.value.requestFrame()
+})
+
+onUnmounted(() => {
+  renderer.value?.dispose()
+  interaction.value?.dispose()
+  scene.value?.dispose()
+})
+
+// Tool bridge
+watch(interactionMode, (mode) => {
+  if (interaction.value && interaction.value.getState().mode !== mode) {
+    interaction.value.setMode(mode)
+  }
+})
+
+onUnmounted(() => {
+  renderer.value?.dispose()
+})
+
+// Stats and computed
+const screenCount = computed(() => {
+  if (!scene.value) return 0
+  return Array.from(scene.value.allScreens).length
+})
+
+const nodeCount = computed(() => {
+  if (!scene.value) return 0
+  let count = 0
+  scene.value.walk(() => {
+    count++
+  })
+  return count
+})
+
+const canvasCursor = computed(() => {
+  const state = interaction.value?.getState()
+  if (interactionMode.value === 'move' || state?.isPanning) {
+    return state?.isPanning ? 'grabbing' : 'grab'
+  }
+  if (isPlacingScreen.value) return 'crosshair'
+  return 'default'
 })
 </script>
 
 <template>
   <div class="canvas-playground">
-    <!-- Top Bar: Project Meta & Actions -->
+    <!-- Top Bar -->
     <header class="top-bar">
       <div class="project-info">
         <div class="project-icon">K</div>
@@ -88,6 +299,42 @@ onMounted(() => {
       </div>
 
       <div class="main-tools">
+        <div class="tool-group interaction-modes">
+          <button
+            @click="interactionMode = 'edit'"
+            :class="{ active: interactionMode === 'edit' }"
+            title="Edit Mode (V)"
+          >
+            <svg viewBox="0 0 24 24" class="icon">
+              <path d="M7 2l12 11.01L13 14.77 16 21l-2 1-3-6.23L7 22V2z" />
+            </svg>
+          </button>
+          <button
+            @click="interactionMode = 'move'"
+            :class="{ active: interactionMode === 'move' }"
+            title="Move Tool (H)"
+          >
+            <svg viewBox="0 0 24 24" class="icon">
+              <path
+                d="M18 11h-5V6h5v5zm-6 0H7V6h5v5zm6 6h-5v-5h5v5zm-6 0H7v-5h5v5zM5 21V3h14v18H5z"
+                fill="none"
+              />
+              <path
+                d="M20.5 5V4.5a2.5 2.5 0 0 0-5 0V5h-1V4.5a2.5 2.5 0 0 0-5 0V5h-1V4.5a2.5 2.5 0 0 0-5 0V5h-1V4.5a2.5 2.5 0 0 0-5 0V11h1v10h18V11h1V5h-1zM9 4.5a1.5 1.5 0 0 1 3 0V5H9V4.5zM4 4.5a1.5 1.5 0 0 1 3 0V5H4V4.5zm11 15.5H5V11h10v9zm1-10V5h3v6h-3zm3 9h-2v-8h2v8z"
+              />
+            </svg>
+          </button>
+          <button
+            @click="interactionMode = 'play'"
+            :class="{ active: interactionMode === 'play' }"
+            title="Play Mode (P)"
+          >
+            <svg viewBox="0 0 24 24" class="icon">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          </button>
+        </div>
+        <div class="divider"></div>
         <div class="tool-group history-tools">
           <button @click="undo" :disabled="history.length === 0" title="Undo (Ctrl+Z)">
             <svg viewBox="0 0 24 24" class="icon">
@@ -104,26 +351,28 @@ onMounted(() => {
             </svg>
           </button>
         </div>
-
         <div class="divider"></div>
-
-        <button class="primary-btn" @click="addScreen">
+        <button
+          class="primary-btn"
+          @click="startPlacingScreen"
+          :class="{ active: isPlacingScreen }"
+        >
           <svg viewBox="0 0 24 24" class="icon">
             <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
           </svg>
-          Add Screen
+          {{ isPlacingScreen ? 'Click to place...' : 'Add Screen' }}
         </button>
       </div>
 
       <div class="user-actions">
+        <button v-if="isPlacingScreen" class="cancel-btn" @click="cancelPlacement">Cancel</button>
         <button class="share-btn">Share</button>
         <div class="avatar"></div>
       </div>
     </header>
 
-    <!-- Content Workspace -->
+    <!-- Workspace -->
     <main class="workspace">
-      <!-- Left Toolbar: Node Creation -->
       <aside class="side-toolbar">
         <div class="node-tools">
           <button @click="addNode('view')" title="Add View">
@@ -149,31 +398,20 @@ onMounted(() => {
         </div>
       </aside>
 
-      <!-- Main Canvas Viewport -->
-      <section class="canvas-viewport">
-        <div class="canvas-grid" v-if="screens.length === 0">
+      <section class="canvas-viewport" :style="{ cursor: canvasCursor }">
+        <canvas ref="canvasRef" class="main-canvas"></canvas>
+        <div class="canvas-grid-overlay" v-if="screenCount === 0 && !isPlacingScreen">
           <div class="empty-state">
             <h3>Start your creation</h3>
             <p>Add a screen or a node to begin designing</p>
-            <button class="pixel-btn" @click="addScreen">Create First Screen</button>
+            <button class="pixel-btn" @click="startPlacingScreen">Create First Screen</button>
           </div>
         </div>
-
-        <div class="screens-container" v-else>
-          <div v-for="screen in screens" :key="screen.id" class="screen-item">
-            <div class="screen-header">
-              <span class="screen-name">{{ screen.name }}</span>
-            </div>
-            <div class="screen-content">
-              <div v-for="node in screen.nodes" :key="node.id" class="node-item" :class="node.type">
-                {{ node.name }}
-              </div>
-            </div>
-          </div>
+        <div v-if="isPlacingScreen" class="placement-hint" :class="{ error: ghostOverlap }">
+          {{ ghostOverlap ? 'Cannot overlap screens' : 'Click to place screen' }}
         </div>
       </section>
 
-      <!-- Right Sidebar: Properties (TBD) -->
       <aside class="properties-panel">
         <div class="panel-header">Properties</div>
         <div class="panel-content">
@@ -182,17 +420,33 @@ onMounted(() => {
       </aside>
     </main>
 
-    <!-- Bottom Status Bar -->
+    <!-- Status Bar -->
     <footer class="status-bar">
-      <div class="coords">X: 0 Y: 0</div>
+      <div class="coords">X: {{ cursorCoords.x }} Y: {{ cursorCoords.y }}</div>
       <div class="zoom-tools">
-        <button>-</button>
-        <span class="zoom-level">100%</span>
-        <button>+</button>
+        <button
+          @click="
+            viewport.setZoom(viewport.zoom * 0.9);
+            zoomLevel = Math.round(viewport.zoom * 100);
+            renderer?.requestFrame();
+          "
+        >
+          -
+        </button>
+        <span class="zoom-level">{{ zoomLevel }}%</span>
+        <button
+          @click="
+            viewport.setZoom(viewport.zoom * 1.1);
+            zoomLevel = Math.round(viewport.zoom * 100);
+            renderer?.requestFrame();
+          "
+        >
+          +
+        </button>
       </div>
       <div class="layer-info">
-        {{ screens.length }} Screens ·
-        {{ screens.reduce((acc, s) => acc + s.nodes.length, 0) }} Layers
+        {{ screenCount }} Screens ·
+        {{ nodeCount }} Layers
       </div>
     </footer>
   </div>
@@ -210,7 +464,6 @@ onMounted(() => {
   user-select: none;
 }
 
-/* --- Top Bar --- */
 .top-bar {
   height: 56px;
   background: rgba(18, 18, 20, 0.8);
@@ -228,7 +481,6 @@ onMounted(() => {
   align-items: center;
   gap: 12px;
 }
-
 .project-icon {
   width: 32px;
   height: 32px;
@@ -241,7 +493,6 @@ onMounted(() => {
   font-size: 18px;
   box-shadow: 0 0 15px rgba(99, 102, 241, 0.3);
 }
-
 .project-name {
   font-weight: 500;
   font-size: 0.95rem;
@@ -253,12 +504,10 @@ onMounted(() => {
   align-items: center;
   gap: 12px;
 }
-
 .tool-group {
   display: flex;
   gap: 4px;
 }
-
 .history-tools button {
   background: transparent;
   border: none;
@@ -268,15 +517,18 @@ onMounted(() => {
   border-radius: 6px;
   transition: all 0.2s;
 }
-
 .history-tools button:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.05);
   color: #fff;
 }
-
 .history-tools button:disabled {
   opacity: 0.3;
   cursor: not-allowed;
+}
+
+.interaction-modes button.active {
+  background: rgba(99, 102, 241, 0.2);
+  color: #6366f1;
 }
 
 .divider {
@@ -298,10 +550,10 @@ onMounted(() => {
   cursor: pointer;
   transition: all 0.2s;
 }
-
-.primary-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.2);
+.primary-btn.active {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: #6366f1;
+  color: #6366f1;
 }
 
 .user-actions {
@@ -309,7 +561,15 @@ onMounted(() => {
   align-items: center;
   gap: 16px;
 }
-
+.cancel-btn {
+  background: transparent;
+  border: 1px solid #ef4444;
+  color: #ef4444;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
 .share-btn {
   background: #6366f1;
   border: none;
@@ -319,7 +579,6 @@ onMounted(() => {
   font-weight: 500;
   cursor: pointer;
 }
-
 .avatar {
   width: 32px;
   height: 32px;
@@ -328,15 +587,12 @@ onMounted(() => {
   border: 2px solid rgba(255, 255, 255, 0.1);
 }
 
-/* --- Workspace Layout --- */
 .workspace {
   flex: 1;
   display: flex;
   position: relative;
   overflow: hidden;
 }
-
-/* Left Toolbar */
 .side-toolbar {
   width: 56px;
   background: rgba(18, 18, 20, 0.6);
@@ -348,13 +604,11 @@ onMounted(() => {
   padding: 12px 0;
   z-index: 90;
 }
-
 .node-tools {
   display: flex;
   flex-direction: column;
   gap: 12px;
 }
-
 .node-tools button {
   background: transparent;
   border: none;
@@ -370,41 +624,48 @@ onMounted(() => {
   transition: all 0.2s;
   font-size: 10px;
 }
-
 .node-tools button:hover {
   background: rgba(255, 255, 255, 0.08);
   color: #fff;
 }
 
-.node-tools .label {
-  margin-top: 4px;
-}
-
-/* Canvas Viewport */
 .canvas-viewport {
   flex: 1;
   position: relative;
   background-color: #0c0c0e;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 0);
-  background-size: 24px 24px;
-  overflow: auto;
+  overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 100px;
+  cursor: crosshair;
 }
-
+.main-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.canvas-grid-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
 .empty-state {
   text-align: center;
   color: #71717a;
+  background: rgba(12, 12, 14, 0.8);
+  padding: 40px;
+  border-radius: 20px;
+  backdrop-filter: blur(10px);
 }
-
 .empty-state h3 {
   color: #fff;
   margin-bottom: 8px;
 }
-
 .pixel-btn {
+  pointer-events: auto;
   margin-top: 16px;
   background: transparent;
   border: 1px solid #6366f1;
@@ -414,68 +675,31 @@ onMounted(() => {
   cursor: pointer;
   transition: all 0.2s;
 }
-
-.pixel-btn:hover {
-  background: #6366f1;
+.placement-hint {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(99, 102, 241, 0.9);
   color: white;
+  padding: 8px 16px;
+  border-radius: 99px;
+  font-size: 13px;
+  font-weight: 500;
+  pointer-events: none;
+  animation: fadeIn 0.3s ease;
+}
+.placement-hint.error {
+  background: rgba(239, 68, 68, 0.9);
 }
 
-.screens-container {
-  display: flex;
-  gap: 40px;
-  padding: 40px;
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 10px);
+  }
 }
 
-.screen-item {
-  width: 300px;
-  height: 500px;
-  background: #18181b;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-  overflow: hidden;
-}
-
-.screen-header {
-  height: 32px;
-  background: rgba(255, 255, 255, 0.03);
-  display: flex;
-  align-items: center;
-  padding: 0 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.screen-name {
-  font-size: 12px;
-  color: #71717a;
-}
-
-.screen-content {
-  flex: 1;
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.node-item {
-  padding: 12px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 6px;
-  font-size: 14px;
-  border-left: 3px solid #6366f1;
-}
-
-.node-item.text {
-  border-left-color: #ec4899;
-}
-.node-item.image {
-  border-left-color: #2dd4bf;
-}
-
-/* Right Properties Panel */
 .properties-panel {
   width: 240px;
   background: rgba(18, 18, 20, 0.8);
@@ -484,7 +708,6 @@ onMounted(() => {
   flex-direction: column;
   z-index: 90;
 }
-
 .panel-header {
   height: 48px;
   display: flex;
@@ -495,7 +718,6 @@ onMounted(() => {
   background: rgba(255, 255, 255, 0.02);
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
-
 .empty-hint {
   padding: 32px 16px;
   text-align: center;
@@ -504,7 +726,6 @@ onMounted(() => {
   font-style: italic;
 }
 
-/* --- Status Bar --- */
 .status-bar {
   height: 32px;
   background: #111113;
@@ -515,22 +736,23 @@ onMounted(() => {
   padding: 0 16px;
   font-size: 11px;
   color: #71717a;
+  z-index: 100;
 }
-
 .zoom-tools {
   display: flex;
   align-items: center;
   gap: 8px;
 }
-
 .zoom-tools button {
   background: transparent;
   border: none;
   color: #a1a1aa;
   cursor: pointer;
+  padding: 2px 8px;
 }
-
-/* Shared Icons */
+.zoom-tools button:hover {
+  color: #fff;
+}
 .icon {
   width: 20px;
   height: 20px;

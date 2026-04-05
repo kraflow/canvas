@@ -8,11 +8,15 @@ A CanvasKit (Skia WASM) rendering engine with a Yoga-powered layout system.
 src/core/
 ├── renderer/         # CanvasKit surface, animation loop, draw functions
 │   ├── draw/         # View, Text, Image renderers + DrawContext + ImageCache
-│   ├── renderer.ts   # Surface management, RAF loop
+│   ├── renderer.ts   # CanvasRenderer class (Surface, RAF, Viewport)
 │   ├── load.ts       # CanvasKit WASM loader
 │   └── types.ts      # LayoutRect, RendererOptions
-├── scene/            # Scene graph with Yoga layout
+├── interaction/      # Interaction manager and mode logic
+│   ├── InteractionManager.ts # Edit, Move, Play modes
+│   └── types.ts      # InteractionState, Events
+├── scene/            # Scene graph with Yoga layout and Spatial Index
 │   ├── scene-graph.ts
+│   ├── SpatialIndex.ts
 │   ├── style-sync.ts
 │   └── types.ts
 ├── fonts/            # Font loading, paragraph building, text segmentation
@@ -20,7 +24,9 @@ src/core/
 │   ├── font-manifest.ts
 │   ├── paragraph-builder.ts
 │   └── ...
-└── styles/           # React Native–compatible style type definitions
+├── viewport/         # Viewport (Panning, Zooming)
+│   └── Viewport.ts
+└── styles/           # React Native–compatible style definitions
     └── types/
         ├── flex.ts   # FlexStyle (layout props)
         ├── view.ts   # ViewStyle (visual props)
@@ -31,49 +37,50 @@ src/core/
 ## Quick Start
 
 ```ts
-import { loadCanvasKit, initializeCanvas, setAnimating, dispose } from '@/core/renderer'
+import { CanvasRenderer } from '@/core/renderer'
 import { createFontSystem } from '@/core/fonts'
-import { renderView, renderText, renderImage, DrawContext, ImageCache } from '@/core/renderer/draw'
+import { renderView, renderText, renderImage, DrawContext } from '@/core/renderer/draw'
 import { SceneGraph } from '@/core/scene'
+import { InteractionManager } from '@/core/interaction'
+import { Viewport } from '@/core/viewport/Viewport'
 
-// 1. Load CanvasKit WASM
-const ck = await loadCanvasKit()
-
-// 2. Create font system
-const fonts = await createFontSystem(ck, manifest)
-
-// 3. Create resource managers
-const drawCtx = new DrawContext(ck)
-const imageCache = new ImageCache(ck)
-
-// 4. Build scene graph
-const scene = await SceneGraph.create()
-const screen = scene.addScreen('main', 0, 0, 400, 600)
-
-// 5. Add nodes
-const card = scene.createNode('view', { backgroundColor: [0.1, 0.1, 0.1, 1], padding: 20 })
-scene.appendChild(screen.root, card)
-
-// 6. Compute layout
-scene.computeAllLayouts()
-
-// 7. Initialize canvas and render
-await initializeCanvas({
+// 1. Initialize Renderer and Load CanvasKit
+const viewport = new Viewport({ x: 0, y: 0, zoom: 1 })
+const renderer = new CanvasRenderer({
   canvas: document.querySelector('canvas')!,
+  viewport: viewport,
   onDraw: (canvas, ck) => {
-    drawCtx.beginFrame()
+    // 6. Draw scene (inside the loop)
     scene.walk((node, rect) => {
-      renderView(ck, canvas, node.style, rect, undefined, undefined, drawCtx)
+      if (node.type === 'view') renderView(ck, canvas, node.style, rect)
+      // else renderText, renderImage...
     })
   },
 })
+await renderer.initialize()
+const ck = renderer.ck!
 
-setAnimating(true)
+// 2. Create font system
+const fonts = createFontSystem(ck, manifest)
 
-// 8. Cleanup
-dispose()
-drawCtx.dispose()
-imageCache.dispose()
+// 3. Build scene graph
+const scene = await SceneGraph.create(ck, fonts)
+const screen = scene.addScreen('main', 0, 0, 400, 600)
+
+// 4. Initialize Interaction
+const interaction = new InteractionManager(renderer.canvas!, scene, viewport)
+
+// 5. Add nodes and compute layout
+const card = scene.createNode('view', { backgroundColor: 'rgba(255, 0, 0, 0.1)', padding: 20 })
+scene.appendChild(screen.root, card)
+scene.computeAllLayouts()
+
+// Initial frame
+renderer.requestFrame()
+
+// Cleanup
+renderer.dispose()
+interaction.dispose()
 scene.dispose()
 fonts.dispose()
 ```
@@ -84,6 +91,7 @@ Next: See individual module docs:
 
 - [Renderer](./renderer.md)
 - [Scene Graph](./scene-graph.md)
+- [Interaction](./interaction.md)
 - [Font System](./fonts.md)
 - [Styles](./styles.md)
 - [DrawContext & ImageCache](./resource-management.md)
