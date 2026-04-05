@@ -1,7 +1,13 @@
 import type { SceneGraph } from '@/core/scene/scene-graph'
 import { Viewport } from '@/core/viewport/Viewport'
 import type { SceneNode } from '@/core/scene/types'
-import type { InteractionState, InteractionCallback, InteractionEvent, InteractionEventType, InteractionMode } from './types'
+import type {
+  InteractionState,
+  InteractionCallback,
+  InteractionEvent,
+  InteractionEventType,
+  InteractionMode,
+} from './types'
 
 export class InteractionManager {
   private canvas: HTMLCanvasElement
@@ -23,6 +29,7 @@ export class InteractionManager {
   private lastMouseY = 0
   private boxStartPoint = { x: 0, y: 0 }
   private listeners: Set<InteractionCallback> = new Set()
+  private originalMode: InteractionMode | null = null
 
   constructor(canvas: HTMLCanvasElement, scene: SceneGraph, viewport?: Viewport) {
     this.canvas = canvas
@@ -42,6 +49,7 @@ export class InteractionManager {
     this.state.isBoxSelecting = false
     this.state.draggedNode = null
     this.state.selectionBox = null
+    this.state.hoveredNode = null
   }
 
   public on(callback: InteractionCallback) {
@@ -54,6 +62,8 @@ export class InteractionManager {
     window.addEventListener('pointermove', this.handlePointerMove)
     window.addEventListener('pointerup', this.handlePointerUp)
     this.canvas.addEventListener('wheel', this.handleWheel, { passive: false })
+    window.addEventListener('keydown', this.handleKeyDown)
+    window.addEventListener('keyup', this.handleKeyUp)
   }
 
   public dispose() {
@@ -61,6 +71,8 @@ export class InteractionManager {
     window.removeEventListener('pointermove', this.handlePointerMove)
     window.removeEventListener('pointerup', this.handlePointerUp)
     this.canvas.removeEventListener('wheel', this.handleWheel)
+    window.removeEventListener('keydown', this.handleKeyDown)
+    window.removeEventListener('keyup', this.handleKeyUp)
     this.listeners.clear()
   }
 
@@ -132,7 +144,7 @@ export class InteractionManager {
         })
       }
       this.dispatch('dragMove', this.state.draggedNode, e, worldPoint.x, worldPoint.y)
-    } else {
+    } else if (this.state.mode !== 'move') {
       const hit = this.scene.hitTest(worldPoint.x, worldPoint.y)
       if (hit !== this.state.hoveredNode) {
         this.state.hoveredNode = hit
@@ -160,7 +172,7 @@ export class InteractionManager {
     e.preventDefault()
     const canvasRect = this.canvas.getBoundingClientRect()
 
-    if (e.ctrlKey) {
+    if (e.ctrlKey || e.metaKey) {
       const zoomDelta = 1 - e.deltaY * 0.01
       this.viewport.zoomAtPoint(zoomDelta, e.clientX, e.clientY, canvasRect)
     } else {
@@ -168,6 +180,20 @@ export class InteractionManager {
     }
 
     this.dispatch('scroll', null, e, 0, 0)
+  }
+
+  private handleKeyDown = (e: KeyboardEvent) => {
+    if (e.code === 'Space' && !e.repeat && this.state.mode === 'edit') {
+      this.originalMode = 'edit'
+      this.setMode('move')
+    }
+  }
+
+  private handleKeyUp = (e: KeyboardEvent) => {
+    if (e.code === 'Space' && this.originalMode === 'edit') {
+      this.setMode('edit')
+      this.originalMode = null
+    }
   }
 
   private getEventWorldPoint(e: PointerEvent) {

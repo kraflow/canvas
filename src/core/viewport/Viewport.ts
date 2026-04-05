@@ -17,9 +17,15 @@ export class Viewport {
     }
   }
 
-  public get x() { return this.state.x }
-  public get y() { return this.state.y }
-  public get zoom() { return this.state.zoom }
+  public get x() {
+    return this.state.x
+  }
+  public get y() {
+    return this.state.y
+  }
+  public get zoom() {
+    return this.state.zoom
+  }
 
   public setPosition(x: number, y: number) {
     this.state.x = x

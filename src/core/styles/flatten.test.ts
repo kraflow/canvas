@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { flattenStyle } from './flatten'
-import { ViewStyle } from './types/view'
+import { type ViewStyle } from './types/view'
 
 describe('flattenStyle', () => {
   it('should return an empty object for null/undefined', () => {
@@ -9,17 +9,17 @@ describe('flattenStyle', () => {
   })
 
   it('should return a single style object as-is', () => {
-    const style: ViewStyle = { backgroundColor: 'red', width: 100 }
+    const style: ViewStyle = { backgroundColor: [1, 0, 0, 1], width: 100 }
     expect(flattenStyle(style)).toEqual(style)
   })
 
   it('should flatten a simple array of styles', () => {
-    const s1: ViewStyle = { backgroundColor: 'red', width: 100 }
-    const s2: ViewStyle = { backgroundColor: 'blue', height: 200 }
+    const s1: ViewStyle = { backgroundColor: [1, 0, 0, 1], width: 100 }
+    const s2: ViewStyle = { backgroundColor: [0, 0, 1, 1], height: 200 }
     const result = flattenStyle([s1, s2])
 
     expect(result).toEqual({
-      backgroundColor: 'blue',
+      backgroundColor: [0, 0, 1, 1],
       width: 100,
       height: 200,
     })
@@ -29,9 +29,9 @@ describe('flattenStyle', () => {
     const s1: ViewStyle = { width: 100 }
     const s2: ViewStyle = { height: 200 }
     const s3: ViewStyle = { width: 300 }
-    
+
     const result = flattenStyle([s1, [null, s2, undefined], s3])
-    
+
     expect(result).toEqual({
       width: 300,
       height: 200,
@@ -41,7 +41,7 @@ describe('flattenStyle', () => {
   it('should expand margin shorthands', () => {
     const style = { margin: 10 }
     const result = flattenStyle(style)
-    
+
     expect(result).toEqual({
       marginTop: 10,
       marginBottom: 10,
@@ -54,10 +54,7 @@ describe('flattenStyle', () => {
     // Specifically testing the scenario the user mentioned:
     // borderLeftWidth is set first, then borderWidth is set later.
     // borderWidth should reset/override borderLeftWidth.
-    const result = flattenStyle([
-      { borderLeftWidth: 10 },
-      { borderWidth: 5 }
-    ])
+    const result = flattenStyle([{ borderLeftWidth: 10 }, { borderWidth: 5 }])
 
     expect(result).toEqual({
       borderTopWidth: 5,
@@ -68,10 +65,7 @@ describe('flattenStyle', () => {
   })
 
   it('should handle specific overrides after shorthands', () => {
-    const result = flattenStyle([
-      { margin: 10 },
-      { marginTop: 20 }
-    ])
+    const result = flattenStyle([{ margin: 10 }, { marginTop: 20 }])
 
     expect(result).toEqual({
       marginTop: 20,

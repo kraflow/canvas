@@ -14,7 +14,13 @@ export interface InteractionState {
   isBoxSelecting: boolean
 }
 
-export type InteractionEventType = 'click' | 'hover' | 'dragStart' | 'dragMove' | 'dragEnd' | 'scroll'
+export type InteractionEventType =
+  | 'click'
+  | 'hover'
+  | 'dragStart'
+  | 'dragMove'
+  | 'dragEnd'
+  | 'scroll'
 
 export interface InteractionEvent {
   type: InteractionEventType
