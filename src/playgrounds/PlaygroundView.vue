@@ -5,28 +5,10 @@ import { Viewport } from '@/core/viewport/Viewport'
 import { SceneGraph } from '@/core/scene/scene-graph'
 import { InteractionManager } from '@/core/interaction/InteractionManager'
 import { createFontSystem } from '@/core/fonts'
-// Playground Constants
-const DEFAULT_SCREEN_WIDTH = 375
-const DEFAULT_SCREEN_HEIGHT = 812
-const DEFAULT_NODE_SPACING = 20
-const DEFAULT_NODE_PADDING = 16
-const DEFAULT_NODE_RADIUS = 8
+import { SCENE_CONFIG, NODE_THEMES } from '@/core/constants'
 
-const COLORS = {
-  VIEW: {
-    bg: new Float32Array([0.388, 0.4, 0.945, 0.1]), // rgba(99, 102, 241, 0.1)
-    border: new Float32Array([0.388, 0.4, 0.945, 0.8]), // rgba(99, 102, 241, 0.8)
-  },
-  TEXT: {
-    bg: new Float32Array([0, 0, 0, 0]),
-    border: new Float32Array([0.925, 0.282, 0.6, 0.8]), // rgba(236, 72, 153, 0.8)
-    color: new Float32Array([1, 1, 1, 1]),
-  },
-  IMAGE: {
-    bg: new Float32Array([0.176, 0.831, 0.749, 0.1]), // rgba(45, 212, 191, 0.1)
-    border: new Float32Array([0.176, 0.831, 0.749, 0.8]), // rgba(45, 212, 191, 0.8)
-  },
-}
+const { SCREEN: SCREEN_CFG, NODE: NODE_CFG } = SCENE_CONFIG
+const COLORS = NODE_THEMES
 
 import { defaultFontManifest } from './font-manifest'
 import type { Canvas, CanvasKit } from 'canvaskit-wasm'
@@ -47,6 +29,7 @@ const viewport = new Viewport({ x: 0, y: 0, zoom: 1 })
 // UI State
 const zoomLevel = ref(100)
 const cursorCoords = ref({ x: 0, y: 0 })
+const showGrid = ref(true)
 
 // Placement State
 const isPlacingScreen = ref(false)
@@ -77,8 +60,8 @@ const checkOverlap = (x: number, y: number, w: number, h: number) => {
 
 const addScreenAt = (x: number, y: number) => {
   if (!scene.value) return
-  const w = DEFAULT_SCREEN_WIDTH
-  const h = DEFAULT_SCREEN_HEIGHT
+  const w = SCREEN_CFG.DEFAULT_WIDTH
+  const h = SCREEN_CFG.DEFAULT_HEIGHT
   if (checkOverlap(x, y, w, h)) {
     console.warn('Overlap detected')
     return
@@ -123,11 +106,11 @@ const addNode = (type: 'view' | 'text' | 'image') => {
 
   const newNode = scene.value.createNode(type, {
     backgroundColor: type === 'view' ? COLORS.VIEW.bg : undefined,
-    // width: parent.rect.w - DEFAULT_NODE_SPACING * 2,
+    width: parent.rect.w - NODE_CFG.DEFAULT_SPACING * 2,
     height: 50,
-    // margin: DEFAULT_NODE_SPACING,
-    // padding: DEFAULT_NODE_PADDING,
-    // borderRadius: DEFAULT_NODE_RADIUS,
+    margin: NODE_CFG.DEFAULT_SPACING,
+    padding: NODE_CFG.DEFAULT_PADDING,
+    borderRadius: NODE_CFG.DEFAULT_RADIUS,
     borderWidth: 1.5,
     borderColor:
       type === 'view'
@@ -160,7 +143,15 @@ const onDraw = (canvas: Canvas, ck: CanvasKit) => {
   // 2. Background Grid
   canvas.save()
   const bounds = canvas.getDeviceClipBounds()
-  renderInfiniteGrid(ck, canvas, viewport, bounds[2] ?? 0, bounds[3] ?? 0, scene.value.drawContext)
+  renderInfiniteGrid(
+    ck,
+    canvas,
+    viewport,
+    bounds[2] ?? 0,
+    bounds[3] ?? 0,
+    showGrid.value,
+    scene.value.drawContext,
+  )
   canvas.restore()
 
   // 3. Render Tree
@@ -204,8 +195,8 @@ const onDraw = (canvas: Canvas, ck: CanvasKit) => {
         ? {
             x: ghostScreenPos.value.x,
             y: ghostScreenPos.value.y,
-            w: DEFAULT_SCREEN_WIDTH,
-            h: DEFAULT_SCREEN_HEIGHT,
+            w: SCREEN_CFG.DEFAULT_WIDTH,
+            h: SCREEN_CFG.DEFAULT_HEIGHT,
             overlap: ghostOverlap.value,
           }
         : undefined,
@@ -268,14 +259,14 @@ onMounted(async () => {
 
       if (isPlacingScreen.value) {
         ghostScreenPos.value = {
-          x: Math.round(e.worldX - DEFAULT_SCREEN_WIDTH / 2),
-          y: Math.round(e.worldY - DEFAULT_SCREEN_HEIGHT / 2),
+          x: Math.round(e.worldX - SCREEN_CFG.DEFAULT_WIDTH / 2),
+          y: Math.round(e.worldY - SCREEN_CFG.DEFAULT_HEIGHT / 2),
         }
         ghostOverlap.value = checkOverlap(
           ghostScreenPos.value.x,
           ghostScreenPos.value.y,
-          DEFAULT_SCREEN_WIDTH,
-          DEFAULT_SCREEN_HEIGHT,
+          SCREEN_CFG.DEFAULT_WIDTH,
+          SCREEN_CFG.DEFAULT_HEIGHT,
         )
       }
     }
@@ -292,6 +283,18 @@ onMounted(async () => {
 
   // 5. Initial Frame
   renderer.value.requestFrame()
+
+  // 6. Keyboard Shortcuts
+  const handleKeyDown = (e: KeyboardEvent) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === "'") {
+      e.preventDefault()
+      showGrid.value = !showGrid.value
+      renderer.value?.requestFrame()
+    }
+  }
+
+  window.addEventListener('keydown', handleKeyDown)
+  onUnmounted(() => window.removeEventListener('keydown', handleKeyDown))
 })
 
 onUnmounted(() => {
@@ -465,7 +468,13 @@ const canvasCursor = computed(() => {
 
     <!-- Status Bar -->
     <footer class="status-bar">
-      <div class="coords">X: {{ cursorCoords.x }} Y: {{ cursorCoords.y }}</div>
+      <div class="status-left">
+        <div class="coords">X: {{ cursorCoords.x }} Y: {{ cursorCoords.y }}</div>
+        <div class="separator"></div>
+        <button class="grid-toggle" @click="showGrid = !showGrid; renderer?.requestFrame()" :class="{ active: showGrid }">
+          Grid: {{ showGrid ? 'On' : 'Off' }}
+        </button>
+      </div>
       <div class="zoom-tools">
         <button
           @click="
@@ -777,6 +786,31 @@ const canvasCursor = computed(() => {
   font-size: 11px;
   color: #71717a;
   z-index: 100;
+}
+.status-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.separator {
+  width: 1px;
+  height: 12px;
+  background: rgba(255, 255, 255, 0.1);
+}
+.grid-toggle {
+  background: transparent;
+  border: none;
+  color: #71717a;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: 4px;
+}
+.grid-toggle:hover {
+  color: #fff;
+}
+.grid-toggle.active {
+  color: #6366f1;
 }
 .zoom-tools {
   display: flex;

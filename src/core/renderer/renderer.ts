@@ -2,6 +2,7 @@ import type { Canvas, CanvasKit, Surface } from 'canvaskit-wasm'
 import type { RendererOptions } from './types'
 import { loadCanvasKit } from './load'
 import type { Viewport } from '../viewport/Viewport'
+import { CORE_COLORS } from '../constants'
 
 /**
  * CanvasRenderer handles the initialization and rendering lifecycle of a CanvasKit-based canvas.
@@ -156,7 +157,7 @@ export class CanvasRenderer {
     const canvas = this.surface.getCanvas()
     if (!canvas) return
 
-    canvas.clear(this.ck.TRANSPARENT)
+    canvas.clear(CORE_COLORS.CANVAS_BG.float)
     canvas.save()
     canvas.scale(this.pixelRatio, this.pixelRatio)
 

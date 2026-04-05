@@ -1,5 +1,6 @@
 import type { SceneGraph } from '@/core/scene/scene-graph'
 import { Viewport } from '@/core/viewport/Viewport'
+import { VIEWPORT_CONFIG } from '../constants'
 import type { SceneNode } from '@/core/scene/types'
 import type {
   InteractionState,
@@ -350,7 +351,7 @@ export class InteractionManager {
 
     if (e.ctrlKey || e.metaKey) {
       // 1. Pinch-to-zoom (most browsers send ctrlKey for trackpad pinch)
-      const zoomDelta = 1 - e.deltaY * 0.01
+      const zoomDelta = 1 - e.deltaY * VIEWPORT_CONFIG.WHEEL_ZOOM_SENSITIVITY
       this.viewport.zoomAtPoint(zoomDelta, e.clientX, e.clientY, canvasRect)
     } else {
       // 2. Two-finger pan (standard wheel/scroll)

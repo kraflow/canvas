@@ -1,3 +1,5 @@
+import { VIEWPORT_CONFIG } from '../constants'
+
 export interface ViewportState {
   x: number
   y: number
@@ -8,7 +10,7 @@ export class Viewport {
   private state: ViewportState = {
     x: 0,
     y: 0,
-    zoom: 1,
+    zoom: VIEWPORT_CONFIG.DEFAULT_ZOOM,
   }
 
   constructor(initialState?: Partial<ViewportState>) {
@@ -33,7 +35,7 @@ export class Viewport {
   }
 
   public setZoom(zoom: number) {
-    this.state.zoom = Math.max(0.01, Math.min(zoom, 50))
+    this.state.zoom = Math.max(VIEWPORT_CONFIG.MIN_ZOOM, Math.min(zoom, VIEWPORT_CONFIG.MAX_ZOOM))
   }
 
   public translate(dx: number, dy: number) {
