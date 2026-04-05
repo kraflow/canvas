@@ -21,6 +21,7 @@ export interface SceneNode {
   parent: SceneNode | null
   yogaNode: YogaNode
   rect: LayoutRect
+  worldRect: LayoutRect // Pre-calculated world-space coordinates
 
   // ── Type-specific fields ──────────────────────────────────────────────────
   text?: string

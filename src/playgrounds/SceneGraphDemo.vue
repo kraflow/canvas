@@ -448,6 +448,7 @@ function draw(canvas: Canvas, ckRef: CanvasKit) {
 
   // 2. Draw hover highlight
   if (state?.hoveredNode && !state.selectedNodes.has(state.hoveredNode.id)) {
+    const rect = state.hoveredNode.worldRect
     canvas.save()
     canvas.translate(v.x, v.y)
     canvas.scale(v.zoom, v.zoom)
@@ -455,12 +456,7 @@ function draw(canvas: Canvas, ckRef: CanvasKit) {
     p.setColor(ckRef.Color(108, 109, 254, 150)) // Lower opacity for hover
     p.setStyle(ckRef.PaintStyle.Stroke)
     p.setStrokeWidth(1.5 / v.zoom)
-
-    scene.walk((node, rect) => {
-      if (node.id === state.hoveredNode?.id) {
-        canvas.drawRect(ckRef.XYWHRect(rect.x, rect.y, rect.w, rect.h), p)
-      }
-    })
+    canvas.drawRect(ckRef.XYWHRect(rect.x, rect.y, rect.w, rect.h), p)
 
     canvas.restore()
   }
@@ -475,11 +471,13 @@ function draw(canvas: Canvas, ckRef: CanvasKit) {
     p.setStyle(ckRef.PaintStyle.Stroke)
     p.setStrokeWidth(2 / v.zoom)
 
-    scene.walk((node, rect) => {
-      if (state.selectedNodes.has(node.id)) {
+    for (const id of state.selectedNodes) {
+      const node = scene.getNodeById(id)
+      if (node) {
+        const rect = node.worldRect
         canvas.drawRect(ckRef.XYWHRect(rect.x, rect.y, rect.w, rect.h), p)
       }
-    })
+    }
 
     canvas.restore()
   }
@@ -556,6 +554,17 @@ onMounted(async () => {
         case 'dragStart':
         case 'panningStart':
         case 'boxSelectStart':
+          renderer.setAnimating(true)
+          break
+
+        case 'dragMove':
+        case 'panningMove':
+        case 'boxSelectMove':
+          // While setAnimating(true) handles the loop, we call requestFrame
+          // just in case we are in a single-frame mode or want an immediate update.
+          renderer.requestFrame()
+          break
+
         case 'scroll':
         case 'hover':
         case 'modeChange':
