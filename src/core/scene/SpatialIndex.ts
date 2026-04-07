@@ -2,127 +2,107 @@ import type { SceneNode } from './types'
 import type { LayoutRect } from '@/core/renderer/types'
 
 /**
- * SpatialIndex provides fast spatial lookups for SceneNodes.
- * It uses a flat grid-based partitioning to narrow down candidates
- * for hit-testing and box-selection.
+ * Grid-based spatial index for fast hit-test and box-selection.
+ *
+ * Cells are keyed by a single number: (cellX & 0x7FFF) | ((cellY & 0x7FFF) << 15)
+ * — avoids string allocation on every lookup.
+ *
+ * Each cell is a Set<SceneNode> for O(1) insert/delete.
  */
 export class SpatialIndex {
   private readonly cellSize: number
-  private readonly grid = new Map<string, SceneNode[]>()
+  private readonly grid = new Map<number, Set<SceneNode>>()
 
-  /**
-   * @param cellSize The size of each grid cell in world pixels. Default is 100.
-   */
-  constructor(cellSize = 100) {
+  constructor(cellSize = 256) {
     this.cellSize = cellSize
   }
 
-  /**
-   * Clears the index and rebuilds it from the given nodes.
-   */
-  public rebuild(nodes: IterableIterator<SceneNode>): void {
-    this.grid.clear()
-    for (const node of nodes) {
-      const rect = node.worldRect
-      const startX = Math.floor(rect.x / this.cellSize)
-      const startY = Math.floor(rect.y / this.cellSize)
-      const endX = Math.floor((rect.x + rect.w) / this.cellSize)
-      const endY = Math.floor((rect.y + rect.h) / this.cellSize)
+  // ── Internal ───────────────────────────────────────────────────────────────
 
-      for (let x = startX; x <= endX; x++) {
-        for (let y = startY; y <= endY; y++) {
-          const key = `${x},${y}`
-          let cell = this.grid.get(key)
-          if (!cell) {
-            cell = []
-            this.grid.set(key, cell)
-          }
-          cell.push(node)
+  private key(cx: number, cy: number): number {
+    // Supports canvas coords in [-4096 * cellSize … 4095 * cellSize]
+    return ((cx & 0x7fff) | ((cy & 0x7fff) << 15)) >>> 0
+  }
+
+  private insertRect(rect: LayoutRect, node: SceneNode): void {
+    const cs = this.cellSize
+    const x0 = Math.floor(rect.x / cs)
+    const y0 = Math.floor(rect.y / cs)
+    const x1 = Math.floor((rect.x + rect.w) / cs)
+    const y1 = Math.floor((rect.y + rect.h) / cs)
+    for (let cx = x0; cx <= x1; cx++) {
+      for (let cy = y0; cy <= y1; cy++) {
+        const k = this.key(cx, cy)
+        let cell = this.grid.get(k)
+        if (!cell) {
+          cell = new Set()
+          this.grid.set(k, cell)
         }
+        cell.add(node)
       }
     }
   }
 
-  /**
-   * Returns all nodes that intersect the given point.
-   */
-  public getCandidatesAtPoint(x: number, y: number): SceneNode[] {
-    const cellX = Math.floor(x / this.cellSize)
-    const cellY = Math.floor(y / this.cellSize)
-    return this.grid.get(`${cellX},${cellY}`) || []
-  }
-
-  /**
-   * Returns all nodes that intersect the given rectangle.
-   */
-  public getCandidatesInRect(rect: LayoutRect): Set<SceneNode> {
-    const candidates = new Set<SceneNode>()
-    const startX = Math.floor(rect.x / this.cellSize)
-    const startY = Math.floor(rect.y / this.cellSize)
-    const endX = Math.floor((rect.x + rect.w) / this.cellSize)
-    const endY = Math.floor((rect.y + rect.h) / this.cellSize)
-
-    for (let x = startX; x <= endX; x++) {
-      for (let y = startY; y <= endY; y++) {
-        const cell = this.grid.get(`${x},${y}`)
-        if (cell) {
-          for (const node of cell) {
-            candidates.add(node)
-          }
-        }
+  private removeRect(rect: LayoutRect, node: SceneNode): void {
+    const cs = this.cellSize
+    const x0 = Math.floor(rect.x / cs)
+    const y0 = Math.floor(rect.y / cs)
+    const x1 = Math.floor((rect.x + rect.w) / cs)
+    const y1 = Math.floor((rect.y + rect.h) / cs)
+    for (let cx = x0; cx <= x1; cx++) {
+      for (let cy = y0; cy <= y1; cy++) {
+        const k = this.key(cx, cy)
+        const cell = this.grid.get(k)
+        if (!cell) continue
+        cell.delete(node)
+        if (cell.size === 0) this.grid.delete(k)
       }
     }
-
-    return candidates
   }
+
+  // ── Public API ─────────────────────────────────────────────────────────────
 
   public insert(node: SceneNode): void {
-    const rect = node.worldRect
-    const startX = Math.floor(rect.x / this.cellSize)
-    const startY = Math.floor(rect.y / this.cellSize)
-    const endX = Math.floor((rect.x + rect.w) / this.cellSize)
-    const endY = Math.floor((rect.y + rect.h) / this.cellSize)
+    this.insertRect(node.worldRect, node)
+  }
 
-    for (let x = startX; x <= endX; x++) {
-      for (let y = startY; y <= endY; y++) {
-        const key = `${x},${y}`
-        let cell = this.grid.get(key)
-        if (!cell) {
-          cell = []
-          this.grid.set(key, cell)
-        }
-        cell.push(node)
-      }
-    }
+  /**
+   * Must be called with the node's OLD worldRect before it is mutated.
+   */
+  public update(node: SceneNode, oldRect: LayoutRect): void {
+    this.removeRect(oldRect, node)
+    this.insertRect(node.worldRect, node)
   }
 
   public remove(node: SceneNode): void {
-    const rect = node.worldRect
-    const startX = Math.floor(rect.x / this.cellSize)
-    const startY = Math.floor(rect.y / this.cellSize)
-    const endX = Math.floor((rect.x + rect.w) / this.cellSize)
-    const endY = Math.floor((rect.y + rect.h) / this.cellSize)
-
-    for (let x = startX; x <= endX; x++) {
-      for (let y = startY; y <= endY; y++) {
-        const key = `${x},${y}`
-        const cell = this.grid.get(key)
-        if (cell) {
-          const idx = cell.indexOf(node)
-          if (idx !== -1) {
-            cell.splice(idx, 1)
-          }
-          if (cell.length === 0) {
-            this.grid.delete(key)
-          }
-        }
-      }
-    }
+    this.removeRect(node.worldRect, node)
   }
 
-  public update(node: SceneNode): void {
-    this.remove(node)
-    this.insert(node)
+  public getCandidatesAtPoint(x: number, y: number): Set<SceneNode> {
+    const k = this.key(Math.floor(x / this.cellSize), Math.floor(y / this.cellSize))
+    return this.grid.get(k) ?? new Set()
+  }
+
+  public getCandidatesInRect(rect: LayoutRect): Set<SceneNode> {
+    const result = new Set<SceneNode>()
+    const cs = this.cellSize
+    const x0 = Math.floor(rect.x / cs)
+    const y0 = Math.floor(rect.y / cs)
+    const x1 = Math.floor((rect.x + rect.w) / cs)
+    const y1 = Math.floor((rect.y + rect.h) / cs)
+    for (let cx = x0; cx <= x1; cx++) {
+      for (let cy = y0; cy <= y1; cy++) {
+        const cell = this.grid.get(this.key(cx, cy))
+        if (!cell) continue
+        for (const node of cell) result.add(node)
+      }
+    }
+    return result
+  }
+
+  public rebuild(nodes: Iterable<SceneNode>): void {
+    this.grid.clear()
+    for (const node of nodes) this.insertRect(node.worldRect, node)
   }
 
   public clear(): void {

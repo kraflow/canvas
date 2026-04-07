@@ -4,8 +4,8 @@ import { CanvasRenderer } from '@/core/renderer/renderer'
 import { Viewport } from '@/core/viewport/Viewport'
 import { SceneGraph } from '@/core/scene/scene-graph'
 import { InteractionManager } from '@/core/interaction/InteractionManager'
-import { createFontSystem } from '@/core/fonts'
-import { SCENE_CONFIG, NODE_THEMES } from '@/core/constants'
+import { createFontSystem, type FontSystem } from '@/core/fonts'
+import { SCENE_CONFIG, NODE_THEMES, CORE_COLORS } from '@/core/constants'
 
 const { SCREEN: SCREEN_CFG, NODE: NODE_CFG } = SCENE_CONFIG
 const COLORS = NODE_THEMES
@@ -14,17 +14,29 @@ import { defaultFontManifest } from './font-manifest'
 import type { Canvas, CanvasKit } from 'canvaskit-wasm'
 import type { SceneNode } from '@/core/scene/types'
 import type { InteractionEvent } from '@/core/interaction/types'
-import { InteractionOverlayManager } from '@/core/interaction/InteractionOverlayManager'
 import type { ViewStyle, TextStyle, ImageStyle } from '@/core/styles'
-import { renderView, renderText, renderImage, renderInfiniteGrid } from '@/core/renderer/draw'
+import {
+  renderView,
+  renderText,
+  renderImage,
+  renderInfiniteGrid,
+  DrawContext,
+  ImageCache,
+  drawHoverHighlight,
+  drawSelectionHighlight,
+  drawMarqueeSelection,
+  drawPlacementGhost,
+  drawScreenTitle,
+} from '@/core/renderer/draw'
 
 // Core
 const canvasRef = ref<HTMLCanvasElement | null>(null)
 const scene = shallowRef<SceneGraph | null>(null)
 const interaction = shallowRef<InteractionManager | null>(null)
-const overlayManager = shallowRef<InteractionOverlayManager | null>(null)
 const renderer = shallowRef<CanvasRenderer | null>(null)
+const imageCache = shallowRef<ImageCache | null>(null)
 const viewport = new Viewport({ x: 0, y: 0, zoom: 1 })
+const fonts = shallowRef<FontSystem>()
 
 // UI State
 const zoomLevel = ref(100)
@@ -68,7 +80,10 @@ const addScreenAt = (x: number, y: number) => {
   }
 
   const name = `Screen ${Array.from(scene.value.allScreens).length + 1}`
-  scene.value.addScreen(Math.random().toString(36).substr(2, 9), name, x, y, w, h)
+  scene.value.addScreen(Math.random().toString(36).substr(2, 9), name, x, y, w, h, {
+    backgroundColor: CORE_COLORS.WHITE.float,
+    padding: 20,
+  })
   isPlacingScreen.value = false
   triggerRef(scene)
   renderer.value?.requestFrame()
@@ -83,7 +98,7 @@ const addNode = (type: 'view' | 'text' | 'image') => {
 
   if (selectedIds.size === 1) {
     const id = Array.from(selectedIds)[0]
-    const target = scene.value.getNodeById(id!)
+    const target = scene.value.getNode(id!)
     if (target) {
       // If it's a view or root, it's a valid parent
       parent = target
@@ -131,41 +146,24 @@ const addNode = (type: 'view' | 'text' | 'image') => {
 }
 
 // Drawing logic
-const onDraw = (canvas: Canvas, ck: CanvasKit) => {
+const onDraw = (canvas: Canvas, ck: CanvasKit, ctx: DrawContext) => {
   if (!canvasRef.value || !scene.value) return
 
   const interactionState = interaction.value?.getState()
 
   // 1. Layout & Setup
-  scene.value.computeAllLayouts()
-  scene.value.drawContext.beginFrame()
+  scene.value.computeLayouts()
 
   // 2. Background Grid
   canvas.save()
   const bounds = canvas.getDeviceClipBounds()
-  renderInfiniteGrid(
-    ck,
-    canvas,
-    viewport,
-    bounds[2] ?? 0,
-    bounds[3] ?? 0,
-    showGrid.value,
-    scene.value.drawContext,
-  )
+  renderInfiniteGrid(ck, canvas, viewport, bounds[2] ?? 0, bounds[3] ?? 0, showGrid.value, ctx)
   canvas.restore()
 
-  // 3. Render Tree
+  // 2. Render Tree
   scene.value.walk((node, absRect) => {
     if (node.type === 'view') {
-      renderView(
-        ck,
-        canvas,
-        node.style as ViewStyle,
-        absRect,
-        node.scroll,
-        undefined,
-        scene.value!.drawContext,
-      )
+      renderView(ck, canvas, node.style as ViewStyle, absRect, node.scroll, undefined, ctx)
     } else if (node.type === 'text') {
       renderText(
         ck,
@@ -173,9 +171,9 @@ const onDraw = (canvas: Canvas, ck: CanvasKit) => {
         node.style as TextStyle,
         absRect,
         node.text || '',
-        scene.value!.fonts,
+        fonts.value,
         undefined,
-        scene.value!.drawContext,
+        ctx,
       )
     } else if (node.type === 'image') {
       renderImage(
@@ -183,24 +181,59 @@ const onDraw = (canvas: Canvas, ck: CanvasKit) => {
         canvas,
         node.style as ImageStyle,
         absRect,
-        node.image || null,
-        scene.value!.drawContext,
+        imageCache.value!.get(node.src!),
+        ctx,
       )
     }
   })
 
-  if (overlayManager.value && interactionState) {
-    overlayManager.value.render(canvas, viewport, interactionState, {
-      placementGhost: isPlacingScreen.value
-        ? {
-            x: ghostScreenPos.value.x,
-            y: ghostScreenPos.value.y,
-            w: SCREEN_CFG.DEFAULT_WIDTH,
-            h: SCREEN_CFG.DEFAULT_HEIGHT,
-            overlap: ghostOverlap.value,
-          }
-        : undefined,
-    })
+  // 3. Render Interaction Overlays
+  if (interactionState) {
+    // Draw hover highlight
+    if (interactionState.hoveredNode) {
+      drawHoverHighlight(ck, canvas, interactionState.hoveredNode.worldRect, viewport.zoom, ctx)
+    }
+
+    // Draw selection highlights
+    for (const id of interactionState.selectedNodes) {
+      const node = scene.value.getNode(id)
+      if (node) {
+        drawSelectionHighlight(ck, canvas, node.worldRect, viewport.zoom, ctx)
+      } else {
+        // Check screens if not in nodes (Screens are special)
+        const screen = scene.value.getScreen(id)
+        if (screen) {
+          drawSelectionHighlight(ck, canvas, screen.root.worldRect, viewport.zoom, ctx)
+        }
+      }
+    }
+
+    // Draw marquee selection
+    if (interactionState.isBoxSelecting && interactionState.selectionBox) {
+      drawMarqueeSelection(ck, canvas, interactionState.selectionBox, viewport.zoom, ctx)
+    }
+
+    // Draw placement ghost
+    if (isPlacingScreen.value) {
+      drawPlacementGhost(
+        ck,
+        canvas,
+        {
+          x: ghostScreenPos.value.x,
+          y: ghostScreenPos.value.y,
+          w: SCREEN_CFG.DEFAULT_WIDTH,
+          h: SCREEN_CFG.DEFAULT_HEIGHT,
+        },
+        viewport.zoom,
+        ghostOverlap.value,
+        ctx,
+      )
+    }
+
+    // Draw screen titles
+    for (const screen of scene.value.allScreens) {
+      drawScreenTitle(ck, canvas, screen.name, screen.root.worldRect, viewport.zoom, fonts.value!)
+    }
   }
 }
 
@@ -213,19 +246,17 @@ onMounted(async () => {
     viewport: viewport,
     onDraw: onDraw,
   })
+
   await renderer.value.initialize()
   const ck = renderer.value.ck
 
+  imageCache.value = new ImageCache(ck!)
+
   // 2. Initialize Core Engine
-  const fonts = await createFontSystem(ck!, defaultFontManifest)
-  scene.value = await SceneGraph.create(ck!, fonts)
-  overlayManager.value = new InteractionOverlayManager(ck!, scene.value.drawContext, scene.value)
-  interaction.value = new InteractionManager(
-    canvasRef.value,
-    scene.value,
-    viewport,
-    overlayManager.value,
-  )
+  fonts.value = await createFontSystem(ck!, defaultFontManifest)
+  scene.value = await SceneGraph.init('1.0.0', fonts.value, imageCache.value)
+
+  interaction.value = new InteractionManager(canvasRef.value, scene.value, viewport)
 
   // 3. Setup Interaction Listeners
   interaction.value.on((e: InteractionEvent) => {
@@ -471,7 +502,11 @@ const canvasCursor = computed(() => {
       <div class="status-left">
         <div class="coords">X: {{ cursorCoords.x }} Y: {{ cursorCoords.y }}</div>
         <div class="separator"></div>
-        <button class="grid-toggle" @click="showGrid = !showGrid; renderer?.requestFrame()" :class="{ active: showGrid }">
+        <button
+          class="grid-toggle"
+          @click="((showGrid = !showGrid), renderer?.requestFrame())"
+          :class="{ active: showGrid }"
+        >
           Grid: {{ showGrid ? 'On' : 'Off' }}
         </button>
       </div>

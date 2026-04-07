@@ -3,6 +3,7 @@ import type { RendererOptions } from './types'
 import { loadCanvasKit } from './load'
 import type { Viewport } from '../viewport/Viewport'
 import { CORE_COLORS } from '../constants'
+import { DrawContext } from './draw'
 
 /**
  * CanvasRenderer handles the initialization and rendering lifecycle of a CanvasKit-based canvas.
@@ -14,11 +15,12 @@ export class CanvasRenderer {
   public ck: CanvasKit | null = null
   private isAnimating = false
   private rafId: number | null = null
-  private onDraw: ((canvas: Canvas, ck: CanvasKit) => void) | null = null
+  private onDraw: ((canvas: Canvas, ck: CanvasKit, ctx: DrawContext) => void) | null = null
   private width = 0
   private height = 0
-  private pixelRatio = window.devicePixelRatio || 1
   private viewport: Viewport | null = null
+
+  public ctx: DrawContext | null = null
 
   /**
    * Creates a new CanvasRenderer instance.
@@ -27,13 +29,9 @@ export class CanvasRenderer {
   constructor(options: RendererOptions) {
     this.canvas = options.canvas
     this.onDraw = options.onDraw || null
-    this.viewport = options.viewport || null
+    this.viewport = options.viewport
     this.width = this.canvas.clientWidth
     this.height = this.canvas.clientHeight
-  }
-
-  public setViewport(viewport: Viewport): void {
-    this.viewport = viewport
   }
 
   /**
@@ -42,6 +40,7 @@ export class CanvasRenderer {
    */
   public async initialize(): Promise<void> {
     this.ck = await loadCanvasKit()
+    this.ctx = new DrawContext(this.ck)
     this.rebuildSurface()
   }
 
@@ -51,22 +50,22 @@ export class CanvasRenderer {
    * @private
    */
   private rebuildSurface(): void {
-    if (!this.ck || !this.canvas) return
+    if (!this.canvas) return
 
     if (this.surface) {
       this.surface.delete()
       this.surface = null
     }
 
-    const physicalWidth = Math.max(1, Math.round(this.width * this.pixelRatio))
-    const physicalHeight = Math.max(1, Math.round(this.height * this.pixelRatio))
+    const physicalWidth = Math.max(1, Math.round(this.width))
+    const physicalHeight = Math.max(1, Math.round(this.height))
 
     this.canvas.width = physicalWidth
     this.canvas.height = physicalHeight
     this.canvas.style.width = `${this.width}px`
     this.canvas.style.height = `${this.height}px`
 
-    this.surface = this.ck.MakeWebGLCanvasSurface(this.canvas, this.ck.ColorSpace.SRGB, {
+    this.surface = this.ck!.MakeWebGLCanvasSurface(this.canvas, this.ck!.ColorSpace.SRGB, {
       alpha: 1,
       antialias: 1,
       depth: 1,
@@ -80,7 +79,7 @@ export class CanvasRenderer {
 
     if (!this.surface) {
       // Fallback if the webgl options failed
-      this.surface = this.ck.MakeSWCanvasSurface(this.canvas)
+      this.surface = this.ck!.MakeSWCanvasSurface(this.canvas)
     }
 
     if (!this.surface) {
@@ -116,6 +115,7 @@ export class CanvasRenderer {
       if (this.rafId !== null) {
         cancelAnimationFrame(this.rafId)
         this.rafId = null
+        this.ctx!.dispose()
       }
     }
   }
@@ -127,9 +127,11 @@ export class CanvasRenderer {
   public requestFrame(): void {
     if (this.isAnimating || this.rafId !== null) return
 
+    this.ctx!.beginFrame()
     this.rafId = requestAnimationFrame(() => {
       this.rafId = null
       this.draw()
+      this.ctx!.dispose()
     })
   }
 
@@ -143,6 +145,7 @@ export class CanvasRenderer {
       return
     }
 
+    this.ctx!.beginFrame()
     this.draw()
     this.rafId = requestAnimationFrame(this.frame.bind(this))
   }
@@ -152,21 +155,20 @@ export class CanvasRenderer {
    * @private
    */
   private draw(): void {
-    if (!this.ck || !this.surface || !this.onDraw) return
+    if (!this.surface) return
 
     const canvas = this.surface.getCanvas()
     if (!canvas) return
 
     canvas.clear(CORE_COLORS.CANVAS_BG.float)
     canvas.save()
-    canvas.scale(this.pixelRatio, this.pixelRatio)
 
     if (this.viewport) {
       canvas.translate(this.viewport.x, this.viewport.y)
       canvas.scale(this.viewport.zoom, this.viewport.zoom)
     }
 
-    this.onDraw(canvas, this.ck)
+    this.onDraw!(canvas, this.ck!, this.ctx!)
 
     canvas.restore()
     this.surface.flush()
@@ -177,6 +179,7 @@ export class CanvasRenderer {
    */
   public dispose(): void {
     this.setAnimating(false)
+    this.ctx!.dispose()
     if (this.surface) {
       this.surface.delete()
       this.surface = null

@@ -1,153 +1,174 @@
-import type { CanvasKit, Image } from 'canvaskit-wasm'
+import type { CanvasKit, Image as SkImage } from 'canvaskit-wasm'
 
-/**
- * A cached image entry with reference counting.
- * When refCount reaches 0, the CanvasKit Image is deleted and the entry removed.
- */
-interface CachedImage {
-  image: Image
+type CacheEntry = {
+  skImage: SkImage
+  lastUsed: number
+  bytes: number
   refCount: number
 }
 
 /**
- * ImageCache manages CanvasKit Image objects with reference counting.
+ * ImageCache loads images using the fast browser-decode path:
+ *   fetch → createImageBitmap (browser codec, off-main-thread)
+ *         → MakeImageFromCanvasImageSource (GPU texture, no WASM decode)
  *
- * Usage:
- *   const cache = new ImageCache(ck)
- *   const img = await cache.load('https://example.com/photo.jpg')  // refCount = 1
- *   cache.acquire('https://example.com/photo.jpg')                 // refCount = 2
- *   cache.release('https://example.com/photo.jpg')                 // refCount = 1
- *   cache.release('https://example.com/photo.jpg')                 // refCount = 0 → deleted
+ * Features:
+ * - Deduplicates in-flight requests (no double-fetch for same src)
+ * - LRU eviction by memory budget (default 256 MB)
+ * - Explicit .delete() on eviction — no WASM/GPU leaks
+ * - Returns a placeholder (null) while loading, caller re-renders on resolution
  */
 export class ImageCache {
   private readonly ck: CanvasKit
-  private readonly cache = new Map<string, CachedImage>()
+  private readonly maxBytes: number
 
-  constructor(ck: CanvasKit) {
+  // Loaded entries keyed by src URL
+  private readonly cache = new Map<string, CacheEntry>()
+  // In-flight promises — deduplicates concurrent requests for the same src
+  private readonly inflight = new Map<string, Promise<SkImage | null>>()
+
+  private usedBytes = 0
+
+  constructor(ck: CanvasKit, maxMB = 256) {
     this.ck = ck
+    this.maxBytes = maxMB * 1024 * 1024
+  }
+
+  // ── Public API ─────────────────────────────────────────────────────────────
+
+  /**
+   * Returns the cached SkImage synchronously if available, null otherwise.
+   * Kicks off a background load on first call; call again after the returned
+   * promise resolves (trigger a re-render on resolution).
+   *
+   * @param src    URL of the image
+   * @param onLoad Called when the image finishes loading (trigger re-render here)
+   */
+  get(src: string, onLoad?: () => void): SkImage | null {
+    const entry = this.cache.get(src)
+    if (entry) {
+      entry.lastUsed = now()
+      return entry.skImage
+    }
+
+    // Not cached — start loading if not already in flight
+    if (!this.inflight.has(src)) {
+      const promise = this._load(src)
+      this.inflight.set(src, promise)
+      promise.then((skImage) => {
+        this.inflight.delete(src)
+        if (skImage) onLoad?.()
+      })
+    }
+
+    return null
   }
 
   /**
-   * Loads an image from a URL, decodes it, and caches it with refCount = 1.
-   * If the image is already cached, increments refCount and returns the cached image.
-   *
-   * @param url - The URL to fetch the image from (also used as the cache key).
-   * @returns The decoded Image, or null if loading/decoding failed.
+   * Await-able version. Useful for pre-loading during import/reconstruct.
    */
-  async load(url: string): Promise<Image | null> {
-    const existing = this.cache.get(url)
-    if (existing) {
-      existing.refCount++
-      return existing.image
+  async load(src: string): Promise<SkImage | null> {
+    const entry = this.cache.get(src)
+    if (entry) {
+      entry.lastUsed = now()
+      entry.refCount++
+      return entry.skImage
     }
 
-    try {
-      const response = await fetch(url)
-      if (!response.ok) {
-        console.warn(`[ImageCache] Failed to fetch ${url}: ${response.status}`)
-        return null
+    let promise = this.inflight.get(src)
+    if (!promise) {
+      promise = this._load(src)
+      this.inflight.set(src, promise)
+      promise.then(() => this.inflight.delete(src))
+    }
+    return promise
+  }
+
+  /** Explicitly remove a single entry and free its GPU memory. */
+  evict(src: string): void {
+    const entry = this.cache.get(src)
+    if (entry) {
+      entry.refCount--
+      if (entry.refCount === 0) {
+        this._evictEntry(src)
       }
-
-      const data = await response.arrayBuffer()
-      const image = this.ck.MakeImageFromEncoded(new Uint8Array(data))
-
-      if (!image) {
-        console.warn(`[ImageCache] Failed to decode image from ${url}`)
-        return null
-      }
-
-      this.cache.set(url, { image, refCount: 1 })
-      return image
-    } catch (err) {
-      console.warn(`[ImageCache] Error loading ${url}:`, err)
-      return null
     }
   }
 
-  /**
-   * Loads an image from raw bytes, decodes it, and caches it with refCount = 1.
-   * If an image with the given key is already cached, increments refCount and returns it.
-   *
-   * @param key - A unique key for this image in the cache.
-   * @param bytes - Raw image bytes (PNG, JPEG, WebP, etc.).
-   * @returns The decoded Image, or null if decoding failed.
-   */
-  loadBytes(key: string, bytes: Uint8Array): Image | null {
-    const existing = this.cache.get(key)
-    if (existing) {
-      existing.refCount++
-      return existing.image
-    }
-
-    const image = this.ck.MakeImageFromEncoded(bytes)
-    if (!image) {
-      console.warn(`[ImageCache] Failed to decode image for key "${key}"`)
-      return null
-    }
-
-    this.cache.set(key, { image, refCount: 1 })
-    return image
-  }
-
-  /**
-   * Acquires a reference to an already-cached image (increments refCount).
-   * Returns null if the image is not in the cache.
-   *
-   * @param key - The cache key (URL or custom key).
-   */
-  acquire(key: string): Image | null {
-    const entry = this.cache.get(key)
-    if (!entry) return null
-    entry.refCount++
-    return entry.image
-  }
-
-  /**
-   * Releases a reference to a cached image (decrements refCount).
-   * When refCount reaches 0, the CanvasKit Image is deleted and removed from cache.
-   *
-   * @param key - The cache key (URL or custom key).
-   */
-  release(key: string): void {
-    const entry = this.cache.get(key)
-    if (!entry) return
-
-    entry.refCount--
-    if (entry.refCount <= 0) {
-      entry.image.delete()
-      this.cache.delete(key)
-    }
-  }
-
-  /**
-   * Returns the current reference count for a cached image, or 0 if not cached.
-   */
-  refCount(key: string): number {
-    return this.cache.get(key)?.refCount ?? 0
-  }
-
-  /**
-   * Returns true if an image with the given key is currently cached.
-   */
-  has(key: string): boolean {
-    return this.cache.has(key)
-  }
-
-  /**
-   * Returns the number of images currently in the cache.
-   */
-  get size(): number {
-    return this.cache.size
-  }
-
-  /**
-   * Disposes of all cached images, deleting their CanvasKit resources.
-   * Call this when the cache is no longer needed (e.g., on component unmount).
-   */
+  /** Free all GPU/WASM resources. Call when the renderer is disposed. */
   dispose(): void {
-    for (const entry of this.cache.values()) {
-      entry.image.delete()
-    }
-    this.cache.clear()
+    for (const src of this.cache.keys()) this._evictEntry(src)
   }
+
+  get memoryUsedMB(): number {
+    return this.usedBytes / (1024 * 1024)
+  }
+
+  // ── Core load pipeline ─────────────────────────────────────────────────────
+
+  private async _load(src: string): Promise<SkImage | null> {
+    try {
+      // Step 1: Fetch compressed bytes
+      const response = await fetch(src)
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      const blob = await response.blob()
+
+      // Step 2: Decode off-main-thread via browser codec
+      // createImageBitmap uses the browser's native image decoder (hardware-
+      // accelerated where available) and runs off the main thread in Chrome.
+      const bitmap = await createImageBitmap(blob)
+
+      // Step 3: Upload to GPU as a WebGL texture via CanvasKit.
+      // MakeImageFromCanvasImageSource wraps the ImageBitmap as a lazy SkImage —
+      // the actual WebGL texture upload happens on first draw, not here.
+      const skImage = this.ck.MakeImageFromCanvasImageSource(bitmap)
+
+      // Step 4: Free the JS-side ImageBitmap immediately.
+      // Skia has taken ownership of the texture; the bitmap is no longer needed.
+      bitmap.close()
+
+      if (!skImage) throw new Error('MakeImageFromCanvasImageSource returned null')
+
+      // Step 5: Account for memory and evict if over budget.
+      // Approximate: width * height * 4 bytes (RGBA)
+      const byteSize = skImage.width() * skImage.height() * 4
+      this._ensureBudget(byteSize)
+      this.cache.set(src, { skImage, lastUsed: now(), bytes: byteSize, refCount: 1 })
+      this.usedBytes += byteSize
+
+      return skImage
+    } catch (err) {
+      console.warn(`[ImageCache] Failed to load "${src}":`, err)
+      return null
+    }
+  }
+
+  // ── Memory management ──────────────────────────────────────────────────────
+
+  /**
+   * Evict LRU entries until there is room for `incoming` bytes.
+   */
+  private _ensureBudget(incoming: number): void {
+    if (this.usedBytes + incoming <= this.maxBytes) return
+
+    // Sort by lastUsed ascending (oldest first)
+    const entries = [...this.cache.entries()].sort((a, b) => a[1].lastUsed - b[1].lastUsed)
+
+    for (const [src] of entries) {
+      if (this.usedBytes + incoming <= this.maxBytes) break
+      this._evictEntry(src)
+    }
+  }
+
+  private _evictEntry(src: string): void {
+    const entry = this.cache.get(src)
+    if (!entry) return
+    entry.skImage.delete() // releases WASM ref + WebGL texture
+    this.usedBytes -= entry.bytes
+    this.cache.delete(src)
+  }
+}
+
+function now(): number {
+  return performance.now()
 }

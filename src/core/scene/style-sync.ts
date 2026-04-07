@@ -1,4 +1,4 @@
-import type { Node as YogaNode, Yoga } from 'yoga-layout/load'
+import type { Node as YogaNode } from 'yoga-layout/load'
 import {
   Align,
   Direction,
@@ -15,128 +15,46 @@ import {
 import type { FlexStyle, DimensionValue } from '@/core/styles/types/flex'
 
 /**
- * Synchronizes a FlexStyle object to a Yoga layout node.
+ * Full sync of a style object to a Yoga node.
  *
- * This maps every layout-relevant property from the style to the corresponding
- * Yoga setter. Non-layout properties (colors, shadows, etc.) are ignored.
- *
- * Call this whenever a node's style changes to keep Yoga in sync.
+ * Every property is always written — absent properties are reset to the
+ * Yoga default. This is required because Yoga does not reset properties
+ * automatically when a style is replaced.
  */
-export function syncStyleToYoga(_yoga: Yoga, node: YogaNode, style: FlexStyle): void {
+export function syncStyleToYoga(node: YogaNode, style: FlexStyle): void {
   // ── Display ────────────────────────────────────────────────────────────────
-  if (style.display !== undefined) {
-    const displayMap: Record<string, Display> = {
-      flex: Display.Flex,
-      none: Display.None,
-      contents: Display.Contents,
-    }
-    node.setDisplay(displayMap[style.display] ?? Display.Flex)
-  } else {
-    node.setDisplay(Display.Flex)
-  }
+  node.setDisplay(DISPLAY[style.display!] ?? Display.Flex)
 
   // ── Direction ──────────────────────────────────────────────────────────────
-  if (style.direction !== undefined) {
-    const dirMap: Record<string, Direction> = {
-      inherit: Direction.Inherit,
-      ltr: Direction.LTR,
-      rtl: Direction.RTL,
-    }
-    node.setDirection(dirMap[style.direction] ?? Direction.Inherit)
-  } else {
-    node.setDirection(Direction.Inherit)
-  }
+  node.setDirection(DIRECTION[style.direction!] ?? Direction.Inherit)
 
   // ── Flex direction ─────────────────────────────────────────────────────────
-  if (style.flexDirection !== undefined) {
-    const fdMap: Record<string, FlexDirection> = {
-      column: FlexDirection.Column,
-      'column-reverse': FlexDirection.ColumnReverse,
-      row: FlexDirection.Row,
-      'row-reverse': FlexDirection.RowReverse,
-    }
-    node.setFlexDirection(fdMap[style.flexDirection] ?? FlexDirection.Column)
-  }
+  node.setFlexDirection(FLEX_DIR[style.flexDirection!] ?? FlexDirection.Column)
 
   // ── Flex wrap ──────────────────────────────────────────────────────────────
-  if (style.flexWrap !== undefined) {
-    const wrapMap: Record<string, Wrap> = {
-      nowrap: Wrap.NoWrap,
-      wrap: Wrap.Wrap,
-      'wrap-reverse': Wrap.WrapReverse,
-    }
-    node.setFlexWrap(wrapMap[style.flexWrap] ?? Wrap.NoWrap)
-  }
+  node.setFlexWrap(WRAP[style.flexWrap!] ?? Wrap.NoWrap)
 
   // ── Justify content ────────────────────────────────────────────────────────
-  if (style.justifyContent !== undefined) {
-    const jcMap: Record<string, Justify> = {
-      'flex-start': Justify.FlexStart,
-      center: Justify.Center,
-      'flex-end': Justify.FlexEnd,
-      'space-between': Justify.SpaceBetween,
-      'space-around': Justify.SpaceAround,
-      'space-evenly': Justify.SpaceEvenly,
-    }
-    node.setJustifyContent(jcMap[style.justifyContent] ?? Justify.FlexStart)
-  } else {
-    node.setJustifyContent(Justify.FlexStart)
-  }
+  node.setJustifyContent(JUSTIFY[style.justifyContent!] ?? Justify.FlexStart)
 
-  // ── Align items ────────────────────────────────────────────────────────────
-  if (style.alignItems !== undefined) {
-    node.setAlignItems(resolveAlign(style.alignItems))
-  }
+  // ── Align items / content / self ──────────────────────────────────────────
+  node.setAlignItems(ALIGN[style.alignItems!] ?? Align.Stretch)
+  node.setAlignContent(ALIGN_CONTENT[style.alignContent!] ?? Align.FlexStart)
+  node.setAlignSelf(ALIGN[style.alignSelf!] ?? Align.Auto)
 
-  // ── Align content ──────────────────────────────────────────────────────────
-  if (style.alignContent !== undefined) {
-    const acMap: Record<string, Align> = {
-      'flex-start': Align.FlexStart,
-      center: Align.Center,
-      'flex-end': Align.FlexEnd,
-      stretch: Align.Stretch,
-      'space-between': Align.SpaceBetween,
-      'space-around': Align.SpaceAround,
-      'space-evenly': Align.SpaceEvenly,
-    }
-    node.setAlignContent(acMap[style.alignContent] ?? Align.FlexStart)
-  }
-
-  // ── Align self ─────────────────────────────────────────────────────────────
-  if (style.alignSelf !== undefined) {
-    node.setAlignSelf(resolveAlign(style.alignSelf))
-  }
-
-  // ── Flex (shorthand) ──────────────────────────────────────────────────────
-  if (style.flex !== undefined) {
-    node.setFlex(style.flex)
-  }
-
-  // ── Flex grow / shrink / basis ─────────────────────────────────────────────
-  if (style.flexGrow !== undefined) node.setFlexGrow(style.flexGrow)
-  if (style.flexShrink !== undefined) node.setFlexShrink(style.flexShrink)
-
-  if (style.flexBasis !== undefined) {
-    setDimensionAuto(
-      node,
-      'setFlexBasis',
-      'setFlexBasisPercent',
-      'setFlexBasisAuto',
-      style.flexBasis,
-    )
-  }
+  // ── Flex ───────────────────────────────────────────────────────────────────
+  node.setFlex(style.flex !== undefined ? style.flex : NaN)
+  node.setFlexGrow(style.flexGrow !== undefined ? style.flexGrow : 0)
+  node.setFlexShrink(style.flexShrink !== undefined ? style.flexShrink : 1)
+  setDimAuto(node, 'setFlexBasis', 'setFlexBasisPercent', 'setFlexBasisAuto', style.flexBasis)
 
   // ── Sizing ─────────────────────────────────────────────────────────────────
-  if (style.width !== undefined) {
-    setDimensionAuto(node, 'setWidth', 'setWidthPercent', 'setWidthAuto', style.width)
-  }
-  if (style.height !== undefined) {
-    setDimensionAuto(node, 'setHeight', 'setHeightPercent', 'setHeightAuto', style.height)
-  }
-  setDimension(node, 'setMinWidth', 'setMinWidthPercent', style.minWidth)
-  setDimension(node, 'setMaxWidth', 'setMaxWidthPercent', style.maxWidth)
-  setDimension(node, 'setMinHeight', 'setMinHeightPercent', style.minHeight)
-  setDimension(node, 'setMaxHeight', 'setMaxHeightPercent', style.maxHeight)
+  setDimAuto(node, 'setWidth', 'setWidthPercent', 'setWidthAuto', style.width)
+  setDimAuto(node, 'setHeight', 'setHeightPercent', 'setHeightAuto', style.height)
+  setDim(node, 'setMinWidth', 'setMinWidthPercent', style.minWidth)
+  setDim(node, 'setMaxWidth', 'setMaxWidthPercent', style.maxWidth)
+  setDim(node, 'setMinHeight', 'setMinHeightPercent', style.minHeight)
+  setDim(node, 'setMaxHeight', 'setMaxHeightPercent', style.maxHeight)
 
   // ── Aspect ratio ──────────────────────────────────────────────────────────
   node.setAspectRatio(
@@ -148,83 +66,88 @@ export function syncStyleToYoga(_yoga: Yoga, node: YogaNode, style: FlexStyle): 
   )
 
   // ── Box sizing ─────────────────────────────────────────────────────────────
-  if (style.boxSizing !== undefined) {
-    node.setBoxSizing(
-      style.boxSizing === 'content-box' ? BoxSizing.ContentBox : BoxSizing.BorderBox,
-    )
-  }
+  node.setBoxSizing(style.boxSizing === 'content-box' ? BoxSizing.ContentBox : BoxSizing.BorderBox)
 
   // ── Position ──────────────────────────────────────────────────────────────
-  if (style.position !== undefined) {
-    const posMap: Record<string, PositionType> = {
-      relative: PositionType.Relative,
-      absolute: PositionType.Absolute,
-      static: PositionType.Static,
-    }
-    node.setPositionType(posMap[style.position] ?? PositionType.Relative)
-  } else {
-    node.setPositionType(PositionType.Relative)
-  }
-
-  setEdgeDimension(node, 'setPosition', Edge.Top, style.top)
-  setEdgeDimension(node, 'setPosition', Edge.Bottom, style.bottom)
-  setEdgeDimension(node, 'setPosition', Edge.Left, style.left)
-  setEdgeDimension(node, 'setPosition', Edge.Right, style.right)
-  setEdgeDimension(node, 'setPosition', Edge.Start, style.start)
-  setEdgeDimension(node, 'setPosition', Edge.End, style.end)
-
-  // Logical Insets
-  setEdgeDimension(node, 'setPosition', Edge.All, style.inset)
-  setEdgeDimension(node, 'setPosition', Edge.Vertical, style.insetBlock)
-  setEdgeDimension(node, 'setPosition', Edge.Top, style.insetBlockStart)
-  setEdgeDimension(node, 'setPosition', Edge.Bottom, style.insetBlockEnd)
-  setEdgeDimension(node, 'setPosition', Edge.Horizontal, style.insetInline)
-  setEdgeDimension(node, 'setPosition', Edge.Start, style.insetInlineStart)
-  setEdgeDimension(node, 'setPosition', Edge.End, style.insetInlineEnd)
+  node.setPositionType(POS_TYPE[style.position!] ?? PositionType.Relative)
+  setEdgeDim(node, 'setPosition', Edge.Top, style.top ?? style.insetBlockStart ?? style.inset)
+  setEdgeDim(node, 'setPosition', Edge.Bottom, style.bottom ?? style.insetBlockEnd ?? style.inset)
+  setEdgeDim(node, 'setPosition', Edge.Left, style.left ?? style.inset)
+  setEdgeDim(node, 'setPosition', Edge.Right, style.right ?? style.inset)
+  setEdgeDim(node, 'setPosition', Edge.Start, style.start ?? style.insetInlineStart)
+  setEdgeDim(node, 'setPosition', Edge.End, style.end ?? style.insetInlineEnd)
+  setEdgeDim(node, 'setPosition', Edge.Horizontal, style.insetInline)
+  setEdgeDim(node, 'setPosition', Edge.Vertical, style.insetBlock)
 
   // ── Margin ─────────────────────────────────────────────────────────────────
-  setEdgeMargin(node, Edge.All, style.margin)
-  setEdgeMargin(node, Edge.Top, style.marginTop)
-  setEdgeMargin(node, Edge.Bottom, style.marginBottom)
-  setEdgeMargin(node, Edge.Left, style.marginLeft)
-  setEdgeMargin(node, Edge.Right, style.marginRight)
-
-  // Logical margins
-  setEdgeMargin(node, Edge.Horizontal, style.marginHorizontal)
-  setEdgeMargin(node, Edge.Vertical, style.marginVertical)
-  setEdgeMargin(node, Edge.Start, style.marginStart)
-  setEdgeMargin(node, Edge.End, style.marginEnd)
-
-  // CSS mappings
-  setEdgeMargin(node, Edge.Vertical, style.marginBlock)
-  setEdgeMargin(node, Edge.Top, style.marginBlockStart)
-  setEdgeMargin(node, Edge.Bottom, style.marginBlockEnd)
-  setEdgeMargin(node, Edge.Horizontal, style.marginInline)
-  setEdgeMargin(node, Edge.Start, style.marginInlineStart)
-  setEdgeMargin(node, Edge.End, style.marginInlineEnd)
+  setEdgeMargin(
+    node,
+    Edge.Top,
+    style.marginTop ??
+      style.marginBlockStart ??
+      style.marginVertical ??
+      style.marginBlock ??
+      style.margin,
+  )
+  setEdgeMargin(
+    node,
+    Edge.Bottom,
+    style.marginBottom ??
+      style.marginBlockEnd ??
+      style.marginVertical ??
+      style.marginBlock ??
+      style.margin,
+  )
+  setEdgeMargin(
+    node,
+    Edge.Left,
+    style.marginLeft ?? style.marginHorizontal ?? style.marginInline ?? style.margin,
+  )
+  setEdgeMargin(
+    node,
+    Edge.Right,
+    style.marginRight ?? style.marginHorizontal ?? style.marginInline ?? style.margin,
+  )
+  setEdgeMargin(node, Edge.Start, style.marginStart ?? style.marginInlineStart)
+  setEdgeMargin(node, Edge.End, style.marginEnd ?? style.marginInlineEnd)
 
   // ── Padding ────────────────────────────────────────────────────────────────
-  setEdgeDimension(node, 'setPadding', Edge.All, style.padding)
-  setEdgeDimension(node, 'setPadding', Edge.Top, style.paddingTop)
-  setEdgeDimension(node, 'setPadding', Edge.Bottom, style.paddingBottom)
-  setEdgeDimension(node, 'setPadding', Edge.Left, style.paddingLeft)
-  setEdgeDimension(node, 'setPadding', Edge.Right, style.paddingRight)
+  setEdgeDim(
+    node,
+    'setPadding',
+    Edge.Top,
+    style.paddingTop ??
+      style.paddingBlockStart ??
+      style.paddingVertical ??
+      style.paddingBlock ??
+      style.padding,
+  )
+  setEdgeDim(
+    node,
+    'setPadding',
+    Edge.Bottom,
+    style.paddingBottom ??
+      style.paddingBlockEnd ??
+      style.paddingVertical ??
+      style.paddingBlock ??
+      style.padding,
+  )
+  setEdgeDim(
+    node,
+    'setPadding',
+    Edge.Left,
+    style.paddingLeft ?? style.paddingHorizontal ?? style.paddingInline ?? style.padding,
+  )
+  setEdgeDim(
+    node,
+    'setPadding',
+    Edge.Right,
+    style.paddingRight ?? style.paddingHorizontal ?? style.paddingInline ?? style.padding,
+  )
+  setEdgeDim(node, 'setPadding', Edge.Start, style.paddingStart ?? style.paddingInlineStart)
+  setEdgeDim(node, 'setPadding', Edge.End, style.paddingEnd ?? style.paddingInlineEnd)
 
-  // Logical paddings
-  setEdgeDimension(node, 'setPadding', Edge.Horizontal, style.paddingHorizontal)
-  setEdgeDimension(node, 'setPadding', Edge.Vertical, style.paddingVertical)
-  setEdgeDimension(node, 'setPadding', Edge.Start, style.paddingStart)
-  setEdgeDimension(node, 'setPadding', Edge.End, style.paddingEnd)
-
-  // CSS mappings
-  setEdgeDimension(node, 'setPadding', Edge.Vertical, style.paddingBlock)
-  setEdgeDimension(node, 'setPadding', Edge.Top, style.paddingBlockStart)
-  setEdgeDimension(node, 'setPadding', Edge.Bottom, style.paddingBlockEnd)
-  setEdgeDimension(node, 'setPadding', Edge.Horizontal, style.paddingInline)
-  setEdgeDimension(node, 'setPadding', Edge.Start, style.paddingInlineStart)
-  setEdgeDimension(node, 'setPadding', Edge.End, style.paddingInlineEnd)
-
-  // ── Border widths (layout contribution) ───────────────────────────────────
+  // ── Border ─────────────────────────────────────────────────────────────────
   node.setBorder(Edge.All, toNum(style.borderWidth) ?? NaN)
   node.setBorder(Edge.Top, toNum(style.borderTopWidth) ?? NaN)
   node.setBorder(Edge.Bottom, toNum(style.borderBottomWidth) ?? NaN)
@@ -234,105 +157,133 @@ export function syncStyleToYoga(_yoga: Yoga, node: YogaNode, style: FlexStyle): 
   node.setBorder(Edge.End, toNum(style.borderEndWidth) ?? NaN)
 
   // ── Gap ────────────────────────────────────────────────────────────────────
-  setGapDimension(node, Gutter.All, style.gap)
-  setGapDimension(node, Gutter.Row, style.rowGap)
-  setGapDimension(node, Gutter.Column, style.columnGap)
+  setGap(node, Gutter.All, style.gap)
+  setGap(node, Gutter.Row, style.rowGap)
+  setGap(node, Gutter.Column, style.columnGap)
 
   // ── Overflow ──────────────────────────────────────────────────────────────
-  if (style.overflow !== undefined) {
-    const ovMap: Record<string, Overflow> = {
-      visible: Overflow.Visible,
-      hidden: Overflow.Hidden,
-      scroll: Overflow.Scroll,
-    }
-    node.setOverflow(ovMap[style.overflow] ?? Overflow.Visible)
-  }
+  node.setOverflow(OVERFLOW[style.overflow!] ?? Overflow.Visible)
 }
 
 // =============================================================================
-// Helpers
+// Lookup tables (allocated once, avoids per-call string comparisons in hot path)
 // =============================================================================
 
-function resolveAlign(value: string): Align {
-  const map: Record<string, Align> = {
-    auto: Align.Auto,
-    'flex-start': Align.FlexStart,
-    center: Align.Center,
-    'flex-end': Align.FlexEnd,
-    stretch: Align.Stretch,
-    baseline: Align.Baseline,
-  }
-  return map[value] ?? Align.Auto
+const DISPLAY: Record<string, Display> = {
+  flex: Display.Flex,
+  none: Display.None,
+  contents: Display.Contents,
+}
+const DIRECTION: Record<string, Direction> = {
+  inherit: Direction.Inherit,
+  ltr: Direction.LTR,
+  rtl: Direction.RTL,
+}
+const FLEX_DIR: Record<string, FlexDirection> = {
+  column: FlexDirection.Column,
+  'column-reverse': FlexDirection.ColumnReverse,
+  row: FlexDirection.Row,
+  'row-reverse': FlexDirection.RowReverse,
+}
+const WRAP: Record<string, Wrap> = {
+  nowrap: Wrap.NoWrap,
+  wrap: Wrap.Wrap,
+  'wrap-reverse': Wrap.WrapReverse,
+}
+const JUSTIFY: Record<string, Justify> = {
+  'flex-start': Justify.FlexStart,
+  center: Justify.Center,
+  'flex-end': Justify.FlexEnd,
+  'space-between': Justify.SpaceBetween,
+  'space-around': Justify.SpaceAround,
+  'space-evenly': Justify.SpaceEvenly,
+}
+const ALIGN: Record<string, Align> = {
+  auto: Align.Auto,
+  'flex-start': Align.FlexStart,
+  center: Align.Center,
+  'flex-end': Align.FlexEnd,
+  stretch: Align.Stretch,
+  baseline: Align.Baseline,
+}
+const ALIGN_CONTENT: Record<string, Align> = {
+  'flex-start': Align.FlexStart,
+  center: Align.Center,
+  'flex-end': Align.FlexEnd,
+  stretch: Align.Stretch,
+  'space-between': Align.SpaceBetween,
+  'space-around': Align.SpaceAround,
+  'space-evenly': Align.SpaceEvenly,
+}
+const POS_TYPE: Record<string, PositionType> = {
+  relative: PositionType.Relative,
+  absolute: PositionType.Absolute,
+  static: PositionType.Static,
+}
+const OVERFLOW: Record<string, Overflow> = {
+  visible: Overflow.Visible,
+  hidden: Overflow.Hidden,
+  scroll: Overflow.Scroll,
 }
 
-/**
- * Sets a dimension property that supports number, 'auto', and '%' values.
- */
-function setDimensionAuto(
+// =============================================================================
+// Dimension helpers
+// =============================================================================
+
+type PointFnAuto = 'setWidth' | 'setHeight' | 'setFlexBasis'
+type PctFnAuto = 'setWidthPercent' | 'setHeightPercent' | 'setFlexBasisPercent'
+type AutoFn = 'setWidthAuto' | 'setHeightAuto' | 'setFlexBasisAuto'
+type PointFn = 'setMinWidth' | 'setMaxWidth' | 'setMinHeight' | 'setMaxHeight'
+type PctFn =
+  | 'setMinWidthPercent'
+  | 'setMaxWidthPercent'
+  | 'setMinHeightPercent'
+  | 'setMaxHeightPercent'
+type EdgeFn = 'setPosition' | 'setPadding'
+
+function setDimAuto(
   node: YogaNode,
-  pointFn: 'setWidth' | 'setHeight' | 'setFlexBasis',
-  percentFn: 'setWidthPercent' | 'setHeightPercent' | 'setFlexBasisPercent',
-  autoFn: 'setWidthAuto' | 'setHeightAuto' | 'setFlexBasisAuto',
+  pt: PointFnAuto,
+  pct: PctFnAuto,
+  auto: AutoFn,
   value: DimensionValue,
 ): void {
-  if (value === null || value === undefined || value === 'auto') {
-    node[autoFn]()
+  if (value == null || value === 'auto') {
+    node[auto]()
     return
   }
   if (typeof value === 'number') {
-    node[pointFn](value)
+    node[pt](value)
     return
   }
-  if (typeof value === 'string' && value.endsWith('%')) {
-    node[percentFn](parseFloat(value))
+  if (value.endsWith('%')) {
+    node[pct](parseFloat(value))
     return
   }
-  // Fallback: parse as number
-  const n = parseFloat(value as string)
-  if (!Number.isNaN(n)) node[pointFn](n)
-  else node[autoFn]()
+  const n = parseFloat(value)
+  if (!Number.isNaN(n)) node[pt](n)
+  else node[auto]()
 }
 
-/**
- * Sets a dimension property that supports number and '%' values (no 'auto').
- */
-function setDimension(
-  node: YogaNode,
-  pointFn: 'setMinWidth' | 'setMaxWidth' | 'setMinHeight' | 'setMaxHeight',
-  percentFn:
-    | 'setMinWidthPercent'
-    | 'setMaxWidthPercent'
-    | 'setMinHeightPercent'
-    | 'setMaxHeightPercent',
-  value: DimensionValue,
-): void {
-  if (value === null || value === undefined) {
-    node[pointFn](NaN)
+function setDim(node: YogaNode, pt: PointFn, pct: PctFn, value: DimensionValue): void {
+  if (value == null) {
+    node[pt](NaN)
     return
   }
   if (typeof value === 'number') {
-    node[pointFn](value)
+    node[pt](value)
     return
   }
-  if (typeof value === 'string' && value.endsWith('%')) {
-    node[percentFn](parseFloat(value))
+  if (value.endsWith('%')) {
+    node[pct](parseFloat(value))
     return
   }
-  const n = parseFloat(value as string)
-  if (!Number.isNaN(n)) node[pointFn](n)
-  else node[pointFn](NaN)
+  const n = parseFloat(value)
+  node[pt](Number.isNaN(n) ? NaN : n)
 }
 
-/**
- * Sets an edge-based dimension (position, padding) that supports number and '%'.
- */
-function setEdgeDimension(
-  node: YogaNode,
-  fn: 'setPosition' | 'setPadding',
-  edge: Edge,
-  value: DimensionValue,
-): void {
-  if (value === null || value === undefined) {
+function setEdgeDim(node: YogaNode, fn: EdgeFn, edge: Edge, value: DimensionValue): void {
+  if (value == null) {
     node[fn](edge, NaN)
     return
   }
@@ -340,19 +291,16 @@ function setEdgeDimension(
     node[fn](edge, value)
     return
   }
-  if (typeof value === 'string' && value.endsWith('%')) {
+  if (value.endsWith('%')) {
     node[fn](edge, `${parseFloat(value)}%` as `${number}%`)
     return
   }
-  const n = parseFloat(value as string)
+  const n = parseFloat(value)
   node[fn](edge, Number.isNaN(n) ? NaN : n)
 }
 
-/**
- * Sets margin (supports number, '%', and 'auto').
- */
 function setEdgeMargin(node: YogaNode, edge: Edge, value: DimensionValue): void {
-  if (value === null || value === undefined) {
+  if (value == null) {
     node.setMargin(edge, NaN)
     return
   }
@@ -364,19 +312,16 @@ function setEdgeMargin(node: YogaNode, edge: Edge, value: DimensionValue): void 
     node.setMargin(edge, value)
     return
   }
-  if (typeof value === 'string' && value.endsWith('%')) {
+  if (value.endsWith('%')) {
     node.setMargin(edge, `${parseFloat(value)}%` as `${number}%`)
     return
   }
-  const n = parseFloat(value as string)
+  const n = parseFloat(value)
   node.setMargin(edge, Number.isNaN(n) ? NaN : n)
 }
 
-/**
- * Sets gap (supports number and '%').
- */
-function setGapDimension(node: YogaNode, gutter: Gutter, value: DimensionValue): void {
-  if (value === null || value === undefined) {
+function setGap(node: YogaNode, gutter: Gutter, value: DimensionValue): void {
+  if (value == null) {
     node.setGap(gutter, NaN)
     return
   }
@@ -385,20 +330,7 @@ function setGapDimension(node: YogaNode, gutter: Gutter, value: DimensionValue):
     return
   }
   if (typeof value === 'string' && value.endsWith('%')) {
-    // If Yoga supports setGapPercent, use it. Otherwise fallback to setGap.
-    const val = parseFloat(value)
-    if (
-      'setGapPercent' in node &&
-      typeof (node as { setGapPercent: (gutter: Gutter, value: number) => void }).setGapPercent ===
-        'function'
-    ) {
-      ;(node as { setGapPercent: (gutter: Gutter, value: number) => void }).setGapPercent(
-        gutter,
-        val,
-      )
-    } else {
-      node.setGap(gutter, val)
-    }
+    node.setGap(gutter, parseFloat(value))
     return
   }
   const n = parseFloat(value as string)
@@ -413,11 +345,11 @@ function toNum(value: number | string | undefined): number | undefined {
 }
 
 function parseAspectRatio(value: string): number {
-  if (value.includes('/')) {
-    const [a, b] = value.split('/')
-    const na = parseFloat(a!)
-    const nb = parseFloat(b!)
-    if (!Number.isNaN(na) && !Number.isNaN(nb) && nb !== 0) return na / nb
+  const slash = value.indexOf('/')
+  if (slash !== -1) {
+    const a = parseFloat(value),
+      b = parseFloat(value.slice(slash + 1))
+    if (!Number.isNaN(a) && !Number.isNaN(b) && b !== 0) return a / b
   }
-  return parseFloat(value) || 1
+  return parseFloat(value) || NaN
 }

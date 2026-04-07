@@ -1,71 +1,57 @@
-import type { Image } from 'canvaskit-wasm'
-import type { ViewStyle, TextStyle, ImageStyle, StyleProp } from '@/core/styles'
+import type { ViewStyle, TextStyle, ImageStyle } from '@/core/styles'
 import type { LayoutRect } from '@/core/renderer/types'
-import type { ScrollPosition } from '@/core/renderer/draw'
 import type { Node as YogaNode } from 'yoga-layout/load'
-
-// =============================================================================
-// Node types
-// =============================================================================
 
 export type SceneNodeType = 'view' | 'text' | 'image'
 
-/**
- * A scene node is a lightweight object representing one element in the UI tree.
- */
 export interface SceneNode {
   readonly id: string
-  type: SceneNodeType
+  readonly type: SceneNodeType
   style: ViewStyle | TextStyle | ImageStyle
-  children: SceneNode[]
+  // Only 'view' nodes have children; text/image always empty
+  readonly children: SceneNode[]
   parent: SceneNode | null
-  yogaNode: YogaNode
+  readonly yogaNode: YogaNode
+  // Local rect relative to parent (set by Yoga)
   rect: LayoutRect
-  worldRect: LayoutRect // Pre-calculated world-space coordinates
-
-  // ── Type-specific fields ──────────────────────────────────────────────────
+  // Absolute world-space rect (screen offset + local)
+  worldRect: LayoutRect
+  // text node only
   text?: string
-  image?: Image | null
+  // image node only
   src?: string
-  scroll?: ScrollPosition
+  // scroll offset applied to children during world-rect calculation
+  scroll: { x: number; y: number }
 }
-
-// =============================================================================
-// Screen
-// =============================================================================
 
 export interface ScreenNode {
   readonly id: string
   name: string
+  // World-space position of the screen canvas (managed externally)
   x: number
   y: number
   width: number
   height: number
-  root: SceneNode
+  readonly root: SceneNode
   dirty: boolean
 }
 
-// =============================================================================
-// Walk visitor
-// =============================================================================
+export type WalkVisitor = (node: SceneNode, worldRect: LayoutRect) => void
 
-export type WalkVisitor = (node: SceneNode, absoluteRect: LayoutRect) => void
-
-// =============================================================================
-// Serialization types
-// =============================================================================
+// ── Serialization ─────────────────────────────────────────────────────────────
 
 export interface SerializedSceneNode {
-  type: SceneNodeType
-  style: StyleProp<ViewStyle | TextStyle | ImageStyle>
+  readonly id: string
+  readonly type: SceneNodeType
+  style: ViewStyle | TextStyle | ImageStyle
   text?: string
   src?: string
-  scroll?: ScrollPosition
+  scroll: { x: number; y: number }
   children: SerializedSceneNode[]
 }
 
 export interface SerializedScreenNode {
-  id: string
+  readonly id: string
   name: string
   x: number
   y: number

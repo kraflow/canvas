@@ -9,7 +9,6 @@ import type {
   InteractionEventType,
   InteractionMode,
 } from './types'
-import type { InteractionOverlayManager } from './InteractionOverlayManager'
 
 export class InteractionManager {
   private canvas: HTMLCanvasElement
@@ -30,33 +29,25 @@ export class InteractionManager {
   private lastMouseX = 0
   private lastMouseY = 0
   private boxStartPoint = { x: 0, y: 0 }
-  private dragStartStates = new Map<string, { 
-    initialX: number; 
-    initialY: number; 
-    grabOffsetX: number; 
-    grabOffsetY: number; 
-    parentId?: string; 
-    style?: unknown 
-  }>()
+  private dragStartStates = new Map<
+    string,
+    {
+      initialX: number
+      initialY: number
+      grabOffsetX: number
+      grabOffsetY: number
+      parentId?: string
+      style?: unknown
+    }
+  >()
   private listeners: Set<InteractionCallback> = new Set()
   private originalMode: InteractionMode | null = null
-  private overlayManager: InteractionOverlayManager | null = null
 
-  constructor(
-    canvas: HTMLCanvasElement,
-    scene: SceneGraph,
-    viewport?: Viewport,
-    overlayManager?: InteractionOverlayManager,
-  ) {
+  constructor(canvas: HTMLCanvasElement, scene: SceneGraph, viewport?: Viewport) {
     this.canvas = canvas
     this.scene = scene
     this.viewport = viewport || new Viewport()
-    this.overlayManager = overlayManager || null
     this.setupListeners()
-  }
-
-  public getOverlayManager(): InteractionOverlayManager | null {
-    return this.overlayManager
   }
 
   public getState(): InteractionState {
@@ -118,7 +109,7 @@ export class InteractionManager {
 
     if (hit) {
       let targetId = hit.id
-      
+
       // If we hit a root node, prefer its screen
       for (const s of this.scene.allScreens) {
         if (s.root.id === hit.id) {
@@ -137,7 +128,7 @@ export class InteractionManager {
 
       this.state.isDragging = true
       this.state.draggedNode = hit
-      
+
       // Store start states for all selected items
       this.dragStartStates.clear()
       for (const id of this.state.selectedNodes) {
@@ -145,25 +136,25 @@ export class InteractionManager {
         if (screen) {
           const gX = worldPoint.x - screen.x
           const gY = worldPoint.y - screen.y
-          this.dragStartStates.set(id, { 
-            initialX: screen.x, 
+          this.dragStartStates.set(id, {
+            initialX: screen.x,
             initialY: screen.y,
             grabOffsetX: gX,
-            grabOffsetY: gY
+            grabOffsetY: gY,
           })
         } else {
-          const node = this.scene.getNodeById(id)
+          const node = this.scene.getNode(id)
           if (node) {
             const style = node.style as Record<string, unknown>
             const gX = worldPoint.x - node.worldRect.x
             const gY = worldPoint.y - node.worldRect.y
-            this.dragStartStates.set(id, { 
-              initialX: (style.left as number) || 0, 
+            this.dragStartStates.set(id, {
+              initialX: (style.left as number) || 0,
               initialY: (style.top as number) || 0,
               grabOffsetX: gX,
               grabOffsetY: gY,
               parentId: node.parent?.id,
-              style: { ...node.style }
+              style: { ...node.style },
             })
           }
         }
@@ -205,17 +196,11 @@ export class InteractionManager {
 
         const screen = this.scene.getScreen(id)
         if (screen) {
-          const newX = worldPoint.x - startState.grabOffsetX;
-          const newY = worldPoint.y - startState.grabOffsetY;
-          if (id === this.state.draggedNode?.id) {
-             // console.log(`[DragMove] Screen id=${id}, world.x=${worldPoint.x}, gX=${startState.grabOffsetX}, newX=${newX}`);
-          }
-          this.scene.updateNode(id, {
-            x: newX,
-            y: newY,
-          })
+          const newX = worldPoint.x - startState.grabOffsetX
+          const newY = worldPoint.y - startState.grabOffsetY
+          this.scene.moveScreen(id, newX, newY)
         } else {
-          const node = this.scene.getNodeById(id)
+          const node = this.scene.getNode(id)
           if (node) {
             const style = node.style as Record<string, unknown>
             const startState = this.dragStartStates.get(id)
@@ -227,27 +212,29 @@ export class InteractionManager {
 
             if (node.parent) {
               const parentBounds = node.parent.worldRect
-              
+
               // Clamp to parent boundaries
-              targetWorldX = Math.max(parentBounds.x, Math.min(targetWorldX, parentBounds.x + parentBounds.w - node.rect.w))
-              targetWorldY = Math.max(parentBounds.y, Math.min(targetWorldY, parentBounds.y + parentBounds.h - node.rect.h))
-              
+              targetWorldX = Math.max(
+                parentBounds.x,
+                Math.min(targetWorldX, parentBounds.x + parentBounds.w - node.rect.w),
+              )
+              targetWorldY = Math.max(
+                parentBounds.y,
+                Math.min(targetWorldY, parentBounds.y + parentBounds.h - node.rect.h),
+              )
+
               const localX = targetWorldX - parentBounds.x
               const localY = targetWorldY - parentBounds.y
 
-              this.scene.updateNode(id, {
-                style: { 
-                  ...style, 
-                  position: 'absolute',
-                  left: localX, 
-                  top: localY 
-                }
+              this.scene.applyStyle(node, {
+                ...style,
+                position: 'absolute',
+                left: localX,
+                top: localY,
               })
             } else {
-               // Node has no parent but isn't a screen? Should be handled by snapback later.
-               this.scene.updateNode(id, {
-                style: { ...style, left: targetWorldX, top: targetWorldY }
-              })
+              // Node has no parent but isn't a screen? Should be handled by snapback later.
+              this.scene.applyStyle(node, { ...style, left: targetWorldX, top: targetWorldY })
             }
           }
         }
@@ -281,9 +268,33 @@ export class InteractionManager {
     if (this.state.isDragging) {
       for (const id of this.state.selectedNodes) {
         const screen = this.scene.getScreen(id)
-        if (screen) continue // Screens can be dropped anywhere on canvas
+        if (screen) {
+          const startState = this.dragStartStates.get(id)
+          if (!startState) continue
 
-        const node = this.scene.getNodeById(id)
+          // Check overlap with other screens on drop
+          let overlaps = false
+          for (const s of this.scene.allScreens) {
+            if (s.id === id) continue // Skip self
+            if (
+              screen.x < s.x + s.width &&
+              screen.x + screen.width > s.x &&
+              screen.y < s.y + s.height &&
+              screen.y + screen.height > s.y
+            ) {
+              overlaps = true
+              break
+            }
+          }
+
+          // Snap back to original position if overlapping
+          if (overlaps) {
+            this.scene.moveScreen(id, startState.initialX, startState.initialY)
+          }
+          continue // Screens don't use the node reparenting logic below
+        }
+
+        const node = this.scene.getNode(id)
         const startState = this.dragStartStates.get(id)
         if (!node || !startState) continue
 
@@ -294,7 +305,7 @@ export class InteractionManager {
 
         for (const hit of hits) {
           if (hit.id === node.id) continue // Can't drop on self
-          
+
           // Check if this hit is or is inside a Screen
           // Only 'view' nodes or Screen roots can accept children
           if (hit.type === 'view') {
@@ -309,16 +320,14 @@ export class InteractionManager {
         if (bestTarget) {
           // Reparenting logic
           const style = node.style as Record<string, unknown>
-          
-          this.scene.updateNode(id, {
-            style: { 
-              ...style, 
-              position: 'relative', // Yoga takes over now!
-              left: 0, // Reset offsets
-              top: 0 
-            }
+
+          this.scene.applyStyle(node, {
+            ...style,
+            position: 'relative', // Yoga takes over now!
+            left: 0, // Reset offsets
+            top: 0,
           })
-          
+
           if (node.parent?.id !== bestTarget.id) {
             this.scene.reparent(id, bestTarget.id)
           }
@@ -326,10 +335,10 @@ export class InteractionManager {
           // Invalid drop (on canvas or non-view node) -> Snap back to original parent
           if (startState.parentId) {
             this.scene.reparent(id, startState.parentId)
-            this.scene.updateNode(id, { style: startState.style as Record<string, unknown> })
+            this.scene.applyStyle(node, startState.style as Record<string, unknown>)
           } else {
-             // This node was somehow at root but not a screen? Snap back anyway.
-             this.scene.updateNode(id, { style: startState.style as Record<string, unknown> })
+            // This node was somehow at root but not a screen? Snap back anyway.
+            this.scene.applyStyle(node, startState.style as Record<string, unknown>)
           }
         }
       }
