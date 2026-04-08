@@ -1,5 +1,6 @@
 import type { SceneNode } from './types'
 import type { LayoutRect } from '@/core/renderer/types'
+import { CONFIG } from '../constants'
 
 /**
  * Grid-based spatial index for fast hit-test and box-selection.
@@ -13,7 +14,7 @@ export class SpatialIndex {
   private readonly cellSize: number
   private readonly grid = new Map<number, Set<SceneNode>>()
 
-  constructor(cellSize = 256) {
+  constructor(cellSize = CONFIG.SPATIAL_INDEX_CELL_SIZE) {
     this.cellSize = cellSize
   }
 

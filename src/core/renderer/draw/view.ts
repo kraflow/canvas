@@ -16,6 +16,7 @@ import type {
 import type { LayoutRect } from '../types'
 import { DrawContext } from './draw-context'
 import { toColor } from './color'
+import { CONFIG } from '../../constants'
 import {
   resolveRadii,
   isSharpRect,
@@ -428,9 +429,9 @@ function buildColorFilter(
       ]
     } else if ('saturate' in f) {
       const s = resolveFilterNumber(f.saturate)
-      const lr = 0.2126
-      const lg = 0.7152
-      const lb = 0.0722
+      const lr = CONFIG.LUMINANCE_RED_WEIGHT
+      const lg = CONFIG.LUMINANCE_GREEN_WEIGHT
+      const lb = CONFIG.LUMINANCE_BLUE_WEIGHT
       const sr = (1 - s) * lr
       const sg = (1 - s) * lg
       const sb = (1 - s) * lb
@@ -444,9 +445,9 @@ function buildColorFilter(
     } else if ('grayscale' in f) {
       const v = resolveFilterNumber(f.grayscale)
       const s = 1 - v
-      const lr = 0.2126
-      const lg = 0.7152
-      const lb = 0.0722
+      const lr = CONFIG.LUMINANCE_RED_WEIGHT
+      const lg = CONFIG.LUMINANCE_GREEN_WEIGHT
+      const lb = CONFIG.LUMINANCE_BLUE_WEIGHT
       const sr = (1 - s) * lr
       const sg = (1 - s) * lg
       const sb = (1 - s) * lb
@@ -482,9 +483,9 @@ function buildColorFilter(
       const rad = deg * (Math.PI / 180)
       const cos = Math.cos(rad)
       const sin = Math.sin(rad)
-      const lr = 0.213
-      const lg = 0.715
-      const lb = 0.072
+      const lr = CONFIG.LUMINANCE_HUE_RED_WEIGHT
+      const lg = CONFIG.LUMINANCE_HUE_GREEN_WEIGHT
+      const lb = CONFIG.LUMINANCE_HUE_BLUE_WEIGHT
       // prettier-ignore
       matrix = [
         lr + cos * (1 - lr) + sin * (-lr),
@@ -544,7 +545,7 @@ function drawOutsetBoxShadows(
     const spread = resolveDimension(shadow.spreadDistance ?? 0, rect.w)
     const blurRadius = resolveDimension(shadow.blurRadius ?? 0, rect.w)
     const sigma = blurRadius / 2
-    const color = shadow.color ? toColor(ck, shadow.color) : ck.Color(0, 0, 0, 0.5)
+    const color = shadow.color ? toColor(ck, shadow.color) : CONFIG.BOX_SHADOW_DEFAULT_COLOR_FLOAT
 
     const shadowRect: LayoutRect = {
       x: rect.x + resolveDimension(shadow.offsetX, rect.w) - spread,
@@ -597,7 +598,7 @@ function drawInsetBoxShadows(
     const spread = resolveDimension(shadow.spreadDistance ?? 0, rect.w)
     const blurRadius = resolveDimension(shadow.blurRadius ?? 0, rect.w)
     const sigma = blurRadius / 2
-    const color = shadow.color ? toColor(ck, shadow.color) : ck.Color(0, 0, 0, 0.5)
+    const color = shadow.color ? toColor(ck, shadow.color) : CONFIG.BOX_SHADOW_DEFAULT_COLOR_FLOAT
 
     const offsetX = resolveDimension(shadow.offsetX, rect.w)
     const offsetY = resolveDimension(shadow.offsetY, rect.h)

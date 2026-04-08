@@ -1,4 +1,5 @@
 import type { CanvasKit, Paint, MaskFilter, PathEffect } from 'canvaskit-wasm'
+import { CONFIG } from '../../constants'
 
 /**
  * DrawContext provides pooled CanvasKit resources to avoid per-frame
@@ -123,8 +124,8 @@ export class DrawContext {
    * @param sigma - The blur sigma. Must be > 0.
    */
   blurMask(sigma: number): MaskFilter {
-    // Round to 2 decimal places to improve cache hit rate
-    const key = Math.round(sigma * 100) / 100
+    // Round to improve cache hit rate
+    const key = Math.round(sigma * CONFIG.PRECISION_BLUR_SIGMA) / CONFIG.PRECISION_BLUR_SIGMA
 
     let mf = this.blurCache.get(key)
     if (!mf) {
@@ -148,20 +149,21 @@ export class DrawContext {
   borderEffect(borderStyle: 'solid' | 'dotted' | 'dashed', width: number): PathEffect | null {
     if (borderStyle === 'solid') return null
 
-    // Round width to 1 decimal to improve cache hits
-    const roundedW = Math.round(width * 10) / 10
+    // Round width to improve cache hits
+    const roundedW =
+      Math.round(width * CONFIG.PRECISION_STROKE_WIDTH) / CONFIG.PRECISION_STROKE_WIDTH
     const key = `${borderStyle}:${roundedW}`
 
     let pe = this.pathEffectCache.get(key)
     if (!pe) {
       if (borderStyle === 'dashed') {
-        const dashLen = Math.max(3, roundedW * 3)
-        const gapLen = Math.max(3, roundedW * 1.5)
+        const dashLen = Math.max(3, roundedW * CONFIG.BORDER_DASH_LENGTH_MULTIPLIER)
+        const gapLen = Math.max(3, roundedW * CONFIG.BORDER_DASH_GAP_MULTIPLIER)
         pe = this.ck.PathEffect.MakeDash([dashLen, gapLen])
       } else {
         // dotted
-        const dotSize = Math.max(1, roundedW)
-        pe = this.ck.PathEffect.MakeDash([dotSize, dotSize * 2])
+        const dotSize = Math.max(1, roundedW * CONFIG.BORDER_DOT_SIZE_MULTIPLIER)
+        pe = this.ck.PathEffect.MakeDash([dotSize, dotSize * CONFIG.BORDER_DOT_GAP_MULTIPLIER])
       }
       this.pathEffectCache.set(key, pe)
     }

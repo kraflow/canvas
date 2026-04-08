@@ -1,7 +1,7 @@
 import type { Canvas, CanvasKit } from 'canvaskit-wasm'
 import type { Viewport } from '../../viewport/Viewport'
 import type { DrawContext } from './draw-context'
-import { GRID_CONFIG } from '../../constants'
+import { CONFIG } from '../../constants'
 
 /**
  * Renders an infinite background grid that pans and zooms with the viewport.
@@ -19,6 +19,9 @@ export function renderInfiniteGrid(
   if (!showGrid) return
 
   const zoom = viewport.zoom
+
+  // Figma-style: hide grid when zoomed out below threshold
+  if (!CONFIG.GRID_SHOW) return
   const bounds = viewport.getVisibleBounds(width, height)
 
   const paint = ctx ? ctx.paint() : new ck.Paint()
@@ -27,15 +30,15 @@ export function renderInfiniteGrid(
 
   // Determine grid sizes based on zoom
   // Figma style: 100px base grid, shows 10px lines when zoomed in (> 150%)
-  const baseSize = GRID_CONFIG.BASE_SIZE
-  const showSubGrid = zoom >= GRID_CONFIG.SUB_GRID_THRESHOLD
-  const subGridSize = baseSize / 10 // e.g. 10px
+  const baseSize = CONFIG.GRID_BASE_SIZE
+  const showSubGrid = zoom >= CONFIG.GRID_SUB_GRID_THRESHOLD
+  const subGridSize = baseSize / CONFIG.GRID_SUB_GRID_DIVISION // e.g. 10px
 
   // 1. Draw Minor/Sub Grid (only when zoomed in)
   if (showSubGrid) {
-    const [r, g, b, a] = GRID_CONFIG.COLOR_MINOR
+    const [r, g, b, a] = CONFIG.GRID_COLOR_MINOR
     paint.setColor(ck.Color(r! / 255, g! / 255, b! / 255, a!))
-    paint.setStrokeWidth(1 / zoom)
+    paint.setStrokeWidth(CONFIG.GRID_STROKE_WIDTH_MINOR / zoom)
 
     const startX = Math.floor(bounds.left / subGridSize) * subGridSize
     for (let x = startX; x <= bounds.right; x += subGridSize) {
@@ -52,9 +55,9 @@ export function renderInfiniteGrid(
   }
 
   // 2. Draw Major Grid
-  const [mr, mg, mb, ma] = GRID_CONFIG.COLOR_MAJOR
+  const [mr, mg, mb, ma] = CONFIG.GRID_COLOR_MAJOR
   paint.setColor(ck.Color(mr! / 255, mg! / 255, mb! / 255, ma!))
-  paint.setStrokeWidth(1.5 / zoom)
+  paint.setStrokeWidth(CONFIG.GRID_STROKE_WIDTH_MAJOR / zoom)
 
   const majorStartX = Math.floor(bounds.left / baseSize) * baseSize
   for (let x = majorStartX; x <= bounds.right; x += baseSize) {
@@ -67,9 +70,9 @@ export function renderInfiniteGrid(
   }
 
   // 3. Draw Axis Lines (World 0,0)
-  const [ar, ag, ab, aa] = GRID_CONFIG.COLOR_AXIS
+  const [ar, ag, ab, aa] = CONFIG.GRID_COLOR_AXIS
   paint.setColor(ck.Color(ar! / 255, ag! / 255, ab! / 255, aa!))
-  paint.setStrokeWidth(2 / zoom)
+  paint.setStrokeWidth(CONFIG.GRID_STROKE_WIDTH_AXIS / zoom)
 
   // Y-axis (Vertical line at x=0)
   if (bounds.left <= 0 && bounds.right >= 0) {

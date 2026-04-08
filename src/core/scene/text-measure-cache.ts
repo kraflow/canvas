@@ -1,4 +1,5 @@
 import type { TextStyle } from '@/core/styles'
+import { CONFIG } from '../constants'
 
 /**
  * Result of a text measurement.
@@ -21,7 +22,7 @@ export class TextMeasureCache {
   /**
    * @param maxEntries Max number of entries to keep.
    */
-  constructor(maxEntries = 1000) {
+  constructor(maxEntries = CONFIG.TEXT_CACHE_MAX_ENTRIES) {
     this.maxEntries = maxEntries
   }
 

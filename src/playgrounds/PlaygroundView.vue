@@ -1,21 +1,17 @@
 <script setup lang="ts">
 import { ref, shallowRef, onMounted, onUnmounted, watch, computed, triggerRef } from 'vue'
-import { CanvasRenderer } from '@/core/renderer/renderer'
-import { Viewport } from '@/core/viewport/Viewport'
-import { SceneGraph } from '@/core/scene/scene-graph'
-import { InteractionManager } from '@/core/interaction/InteractionManager'
-import { createFontSystem, type FontSystem } from '@/core/fonts'
-import { SCENE_CONFIG, NODE_THEMES, CORE_COLORS } from '@/core/constants'
-
-const { SCREEN: SCREEN_CFG, NODE: NODE_CFG } = SCENE_CONFIG
-const COLORS = NODE_THEMES
-
-import { defaultFontManifest } from './font-manifest'
-import type { Canvas, CanvasKit } from 'canvaskit-wasm'
-import type { SceneNode } from '@/core/scene/types'
-import type { InteractionEvent } from '@/core/interaction/types'
-import type { ViewStyle, TextStyle, ImageStyle } from '@/core/styles'
 import {
+  CanvasRenderer,
+  Viewport,
+  SceneGraph,
+  InteractionManager,
+  createFontSystem,
+  type FontSystem,
+  type SceneNode,
+  type InteractionEvent,
+  type ViewStyle,
+  type TextStyle,
+  type ImageStyle,
   renderView,
   renderText,
   renderImage,
@@ -27,7 +23,21 @@ import {
   drawMarqueeSelection,
   drawPlacementGhost,
   drawScreenTitle,
-} from '@/core/renderer/draw'
+} from '@/index'
+
+import { defaultFontManifest } from './font-manifest'
+import type { Canvas, CanvasKit } from 'canvaskit-wasm'
+
+// Playground-specific theme colors (not part of core library)
+const PLAYGROUND_VIEW_BG = new Float32Array([0.388, 0.4, 0.945, 0.1]) // rgba(99, 102, 241, 0.1)
+const PLAYGROUND_VIEW_BORDER = new Float32Array([0.388, 0.4, 0.945, 0.8]) // rgba(99, 102, 241, 0.8)
+const PLAYGROUND_TEXT_COLOR = new Float32Array([255, 255, 255, 1]) // rgba(255, 255, 255, 1)
+const PLAYGROUND_SCREEN_BG = new Float32Array([1, 1, 1, 1]) // rgba(255, 255, 255, 1)
+const PLAYGROUND_TEXT_BORDER = new Float32Array([0.925, 0.282, 0.6, 0.8]) // rgba(236, 72, 153, 0.8)
+const PLAYGROUND_IMAGE_BORDER = new Float32Array([0.176, 0.831, 0.749, 0.8]) // rgba(45, 212, 191, 0.8)
+
+const SCREEN_WIDTH = 375
+const SCREEN_HEIGHT = 812
 
 // Core
 const canvasRef = ref<HTMLCanvasElement | null>(null)
@@ -72,8 +82,8 @@ const checkOverlap = (x: number, y: number, w: number, h: number) => {
 
 const addScreenAt = (x: number, y: number) => {
   if (!scene.value) return
-  const w = SCREEN_CFG.DEFAULT_WIDTH
-  const h = SCREEN_CFG.DEFAULT_HEIGHT
+  const w = SCREEN_WIDTH
+  const h = SCREEN_HEIGHT
   if (checkOverlap(x, y, w, h)) {
     console.warn('Overlap detected')
     return
@@ -81,7 +91,7 @@ const addScreenAt = (x: number, y: number) => {
 
   const name = `Screen ${Array.from(scene.value.allScreens).length + 1}`
   scene.value.addScreen(Math.random().toString(36).substr(2, 9), name, x, y, w, h, {
-    backgroundColor: CORE_COLORS.WHITE.float,
+    backgroundColor: PLAYGROUND_SCREEN_BG,
     padding: 20,
   })
   isPlacingScreen.value = false
@@ -120,24 +130,24 @@ const addNode = (type: 'view' | 'text' | 'image') => {
   }
 
   const newNode = scene.value.createNode(type, {
-    backgroundColor: type === 'view' ? COLORS.VIEW.bg : undefined,
-    width: parent.rect.w - NODE_CFG.DEFAULT_SPACING * 2,
+    backgroundColor: type === 'view' ? PLAYGROUND_VIEW_BG : undefined,
+    width: parent.rect.w - 20 * 2,
     height: 50,
-    margin: NODE_CFG.DEFAULT_SPACING,
-    padding: NODE_CFG.DEFAULT_PADDING,
-    borderRadius: NODE_CFG.DEFAULT_RADIUS,
+    margin: 20,
+    padding: 16,
+    borderRadius: 8,
     borderWidth: 1.5,
     borderColor:
       type === 'view'
-        ? COLORS.VIEW.border
+        ? PLAYGROUND_VIEW_BORDER
         : type === 'text'
-          ? COLORS.TEXT.border
-          : COLORS.IMAGE.border,
+          ? PLAYGROUND_TEXT_BORDER
+          : PLAYGROUND_IMAGE_BORDER,
   } as ViewStyle)
 
   if (type === 'text') {
     scene.value.setText(newNode, 'New Text Layer')
-    scene.value.applyStyle(newNode, { color: COLORS.TEXT.color, fontSize: 16 } as TextStyle)
+    scene.value.applyStyle(newNode, { color: PLAYGROUND_TEXT_COLOR, fontSize: 16 } as TextStyle)
   }
 
   scene.value.appendChild(parent, newNode)
@@ -221,8 +231,8 @@ const onDraw = (canvas: Canvas, ck: CanvasKit, ctx: DrawContext) => {
         {
           x: ghostScreenPos.value.x,
           y: ghostScreenPos.value.y,
-          w: SCREEN_CFG.DEFAULT_WIDTH,
-          h: SCREEN_CFG.DEFAULT_HEIGHT,
+          w: SCREEN_WIDTH,
+          h: SCREEN_HEIGHT,
         },
         viewport.zoom,
         ghostOverlap.value,
@@ -290,14 +300,14 @@ onMounted(async () => {
 
       if (isPlacingScreen.value) {
         ghostScreenPos.value = {
-          x: Math.round(e.worldX - SCREEN_CFG.DEFAULT_WIDTH / 2),
-          y: Math.round(e.worldY - SCREEN_CFG.DEFAULT_HEIGHT / 2),
+          x: Math.round(e.worldX - SCREEN_WIDTH / 2),
+          y: Math.round(e.worldY - SCREEN_HEIGHT / 2),
         }
         ghostOverlap.value = checkOverlap(
           ghostScreenPos.value.x,
           ghostScreenPos.value.y,
-          SCREEN_CFG.DEFAULT_WIDTH,
-          SCREEN_CFG.DEFAULT_HEIGHT,
+          SCREEN_WIDTH,
+          SCREEN_HEIGHT,
         )
       }
     }

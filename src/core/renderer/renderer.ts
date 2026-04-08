@@ -2,7 +2,7 @@ import type { Canvas, CanvasKit, Surface } from 'canvaskit-wasm'
 import type { RendererOptions } from './types'
 import { loadCanvasKit } from './load'
 import type { Viewport } from '../viewport/Viewport'
-import { CORE_COLORS } from '../constants'
+import { CONFIG } from '../constants'
 import { DrawContext } from './draw'
 
 /**
@@ -160,7 +160,7 @@ export class CanvasRenderer {
     const canvas = this.surface.getCanvas()
     if (!canvas) return
 
-    canvas.clear(CORE_COLORS.CANVAS_BG.float)
+    canvas.clear(CONFIG.COLOR_CANVAS_BG_FLOAT)
     canvas.save()
 
     if (this.viewport) {

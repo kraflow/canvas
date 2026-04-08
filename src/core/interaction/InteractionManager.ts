@@ -1,6 +1,6 @@
 import type { SceneGraph } from '@/core/scene/scene-graph'
 import { Viewport } from '@/core/viewport/Viewport'
-import { VIEWPORT_CONFIG } from '../constants'
+import { CONFIG } from '../constants'
 import type { SceneNode } from '@/core/scene/types'
 import type {
   InteractionState,
@@ -360,7 +360,7 @@ export class InteractionManager {
 
     if (e.ctrlKey || e.metaKey) {
       // 1. Pinch-to-zoom (most browsers send ctrlKey for trackpad pinch)
-      const zoomDelta = 1 - e.deltaY * VIEWPORT_CONFIG.WHEEL_ZOOM_SENSITIVITY
+      const zoomDelta = 1 - e.deltaY * CONFIG.VIEWPORT_WHEEL_ZOOM_SENSITIVITY
       this.viewport.zoomAtPoint(zoomDelta, e.clientX, e.clientY, canvasRect)
     } else {
       // 2. Two-finger pan (standard wheel/scroll)
@@ -371,14 +371,14 @@ export class InteractionManager {
   }
 
   private handleKeyDown = (e: KeyboardEvent) => {
-    if (e.code === 'Space' && !e.repeat && this.state.mode === 'edit') {
+    if (e.code === CONFIG.KEYBOARD_PAN_SHORTCUT && !e.repeat && this.state.mode === 'edit') {
       this.originalMode = 'edit'
       this.setMode('move')
     }
   }
 
   private handleKeyUp = (e: KeyboardEvent) => {
-    if (e.code === 'Space' && this.originalMode === 'edit') {
+    if (e.code === CONFIG.KEYBOARD_PAN_SHORTCUT && this.originalMode === 'edit') {
       this.setMode('edit')
       this.originalMode = null
     }

@@ -18,6 +18,7 @@ import { TextMeasureCache } from './text-measure-cache'
 import { SpatialIndex } from './SpatialIndex'
 import { toSerializableScreen } from './serialization'
 import { ImageCache } from '../renderer/draw'
+import { CONFIG } from '../constants'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SceneGraph
@@ -32,7 +33,7 @@ export class SceneGraph {
   // Every SceneNode including root nodes of screens.
   private readonly nodes = new Map<string, SceneNode>()
 
-  private nextId = 1
+  private nextId = CONFIG.ID_START_COUNTER
   private _anyDirty = false
 
   private constructor(
@@ -468,7 +469,9 @@ export class SceneGraph {
       const text = node.text ?? ''
       const style = node.style as TextStyle
       const maxWidth =
-        widthMode === MeasureMode.Exactly || widthMode === MeasureMode.AtMost ? width : 1e9
+        widthMode === MeasureMode.Exactly || widthMode === MeasureMode.AtMost
+          ? width
+          : CONFIG.TEXT_MEASURE_MAX_WIDTH
       const key = TextMeasureCache.makeKey(text, style, maxWidth)
       const cached = this.textMeasureCache.get(key)
       if (cached) return cached
@@ -476,7 +479,7 @@ export class SceneGraph {
       try {
         const para = this.fonts.makeParagraphSync(
           text,
-          style.fontFamily ?? 'Inter',
+          style.fontFamily ?? CONFIG.TEXT_DEFAULT_FONT_FAMILY,
           style as unknown as ParagraphOptions,
           maxWidth,
         )

@@ -1,9 +1,11 @@
 import type { Canvas, CanvasKit, Paragraph } from 'canvaskit-wasm'
-import type { TextStyle as KraflowTextStyle } from '@/core/styles'
+import type { ColorValue, TextStyle as KraflowTextStyle } from '@/core/styles'
 import type { FontSystem, ParagraphOptions } from '@/core/fonts'
 import type { LayoutRect } from '../types'
 import type { DrawContext } from './draw-context'
 import { toColor } from './color'
+
+import { CONFIG } from '../../constants'
 import { resolveRadii, isSharpRect, makeRRect } from './path'
 import { renderView } from './view'
 
@@ -71,7 +73,12 @@ export function renderText(
 
       if (!para && fontSystem) {
         const opts = buildParagraphOptions(ck, style)
-        para = fontSystem.makeParagraphSync(text, style.fontFamily ?? 'system-ui', opts, w)
+        para = fontSystem.makeParagraphSync(
+          text,
+          style.fontFamily ?? CONFIG.TEXT_FALLBACK_FONT_FAMILY,
+          opts,
+          w,
+        )
         paraOwned = true
       }
 
@@ -122,7 +129,7 @@ export async function renderTextAsync(
 
 function buildParagraphOptions(ck: CanvasKit, style: KraflowTextStyle): ParagraphOptions {
   const opts: ParagraphOptions = {
-    fontSize: style.fontSize ?? 14,
+    fontSize: style.fontSize ?? CONFIG.TEXT_DEFAULT_FONT_SIZE,
 
     // Color
     color: style.color ? toColorF32(ck, style.color) : new Float32Array([0, 0, 0, 1]),
@@ -167,15 +174,15 @@ function buildParagraphOptions(ck: CanvasKit, style: KraflowTextStyle): Paragrap
 // =============================================================================
 
 function resolveFontWeight(weight: KraflowTextStyle['fontWeight']): number {
-  if (weight === undefined || weight === null) return 400
+  if (weight === undefined || weight === null) return CONFIG.FONT_WEIGHT_NORMAL
   if (typeof weight === 'number') return weight
   switch (weight) {
     case 'normal':
-      return 400
+      return CONFIG.FONT_WEIGHT_NORMAL
     case 'bold':
-      return 700
+      return CONFIG.FONT_WEIGHT_BOLD
     default:
-      return parseInt(weight, 10) || 400
+      return parseInt(weight, 10) || CONFIG.FONT_WEIGHT_NORMAL
   }
 }
 
@@ -278,7 +285,7 @@ function resolveTextShadow(ck: CanvasKit, style: KraflowTextStyle): ParagraphOpt
   return {
     color: style.textShadowColor
       ? toColorF32(ck, style.textShadowColor)
-      : new Float32Array([0, 0, 0, 0.5]),
+      : new Float32Array([0, 0, 0, CONFIG.TEXT_DEFAULT_SHADOW_ALPHA]),
     offsetX: style.textShadowOffset?.width ?? 0,
     offsetY: style.textShadowOffset?.height ?? 0,
     blurRadius: style.textShadowRadius ?? 0,
@@ -324,7 +331,7 @@ function resolveFontFeatures(
 // Color helper
 // =============================================================================
 
-function toColorF32(ck: CanvasKit, value: import('@/core/styles').ColorValue): Float32Array {
+function toColorF32(ck: CanvasKit, value: ColorValue): Float32Array {
   const c = toColor(ck, value)
   return c instanceof Float32Array ? c : Float32Array.from(c as unknown as number[])
 }
