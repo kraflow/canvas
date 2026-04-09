@@ -29,13 +29,31 @@ export default defineConfig({
     },
   },
   define: {
-    __VERSION__: "'" + pkg.version + "'",
+    __VERSION__: JSON.stringify(pkg.version),
+    __DEV__: `(typeof globalThis !== 'undefined' && globalThis.__DEV__ !== undefined) ? globalThis.__DEV__ : ${process.env.NODE_ENV !== 'production'}`,
   },
   build: {
     lib: {
       entry: path.resolve(__dirname, 'src/index.ts'),
       name: 'Canvas',
       fileName: (format) => `canvas.${format}.js`,
+    },
+    rollupOptions: {
+      external: [
+        'yoga-layout/load',
+        'yoga-layout',
+        'canvaskit-wasm',
+        /^yoga-layout/,
+        /^canvaskit-wasm/,
+      ],
+      output: {
+        globals: {
+          'yoga-layout/load': 'YogaLayout',
+          'yoga-layout': 'YogaLayout',
+          'canvaskit-wasm': 'CanvasKit',
+          'canvaskit-wasm/bin/canvaskit.wasm?url': 'CanvasKitWasmUrl',
+        },
+      },
     },
   },
 })

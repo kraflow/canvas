@@ -211,4 +211,4 @@ export function resetConfig(): void {
 // Environment (Static - cannot be changed at runtime)
 // =============================================================================
 
-export const IS_DEV = import.meta.env.DEV
+export const IS_DEV = __DEV__

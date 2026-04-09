@@ -1,4 +1,5 @@
 import type { CanvasKit, Image as SkImage } from 'canvaskit-wasm'
+import { devThrow } from '../../utils/dev-error'
 
 type CacheEntry = {
   skImage: SkImage
@@ -110,7 +111,7 @@ export class ImageCache {
     try {
       // Step 1: Fetch compressed bytes
       const response = await fetch(src)
-      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      if (!response.ok) devThrow(`HTTP ${response.status}`)
       const blob = await response.blob()
 
       // Step 2: Decode off-main-thread via browser codec
@@ -127,7 +128,7 @@ export class ImageCache {
       // Skia has taken ownership of the texture; the bitmap is no longer needed.
       bitmap.close()
 
-      if (!skImage) throw new Error('MakeImageFromCanvasImageSource returned null')
+      if (!skImage) devThrow('MakeImageFromCanvasImageSource returned null')
 
       // Step 5: Account for memory and evict if over budget.
       // Approximate: width * height * 4 bytes (RGBA)

@@ -6,6 +6,7 @@ import type { SceneNode, ScreenNode, SerializedSceneNode, SerializedScreenNode }
  */
 export function toSerializableNode(node: SceneNode): SerializedSceneNode {
   return {
+    id: node.id,
     type: node.type,
     style: { ...node.style },
     text: node.text,
@@ -21,6 +22,7 @@ export function toSerializableNode(node: SceneNode): SerializedSceneNode {
 export function toSerializableScreen(screen: ScreenNode): SerializedScreenNode {
   return {
     id: screen.id,
+    name: screen.name,
     x: screen.x,
     y: screen.y,
     width: screen.width,

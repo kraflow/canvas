@@ -1,4 +1,21 @@
-import type { FontManifest } from './font-manifest'
+export interface FontManifest {
+  families: Record<
+    string,
+    {
+      weights: number[]
+      variants: Record<
+        string,
+        {
+          url: string
+          priority: 'eager' | 'lazy'
+        }
+      >
+      unicodeRanges: string[]
+    }
+  >
+  fallbackChain: string[]
+  eagerLoad: string[]
+}
 
 export const defaultFontManifest: FontManifest = {
   families: {

@@ -1,8 +1,11 @@
 import type { Yoga } from 'yoga-layout/load'
-import { loadYoga, Direction, MeasureMode } from 'yoga-layout/load'
+import { Direction, MeasureMode } from 'yoga-layout/load'
+import { loadYoga } from './yoga-loader'
+import type { CanvasKit } from 'canvaskit-wasm'
 import type { ViewStyle, TextStyle, ImageStyle } from '@/core/styles'
 import type { LayoutRect } from '@/core/renderer/types'
-import type { FontSystem, ParagraphOptions } from '@/core/fonts'
+import type { FontSystem } from '@/core/fonts'
+import { buildParagraphOptions } from '@/core/renderer/draw/text'
 import type {
   SceneNode,
   ScreenNode,
@@ -19,6 +22,7 @@ import { SpatialIndex } from './SpatialIndex'
 import { toSerializableScreen } from './serialization'
 import { ImageCache } from '../renderer/draw'
 import { CONFIG } from '../constants'
+import { devThrow } from '../utils/dev-error'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SceneGraph
@@ -38,6 +42,7 @@ export class SceneGraph {
 
   private constructor(
     private readonly version: string,
+    public readonly ck: CanvasKit,
     private readonly yoga: Yoga,
     private readonly fonts: FontSystem,
     private readonly imageCache: ImageCache,
@@ -49,7 +54,9 @@ export class SceneGraph {
     imageCache: ImageCache,
   ): Promise<SceneGraph> {
     const yoga = await loadYoga()
-    return new SceneGraph(version, yoga, fonts, imageCache)
+    const { loadCanvasKit } = await import('@/core/renderer/load')
+    const ck = await loadCanvasKit()
+    return new SceneGraph(version, ck, yoga, fonts, imageCache)
   }
 
   // ── Screens ────────────────────────────────────────────────────────────────
@@ -63,7 +70,7 @@ export class SceneGraph {
     height: number,
     style?: ViewStyle,
   ): ScreenNode {
-    if (this.screens.has(id)) throw new Error(`[SceneGraph] Screen "${id}" already exists`)
+    if (this.screens.has(id)) devThrow(`[SceneGraph] Screen "${id}" already exists`)
 
     const yogaNode = this.yoga.Node.create()
     yogaNode.setWidth(width)
@@ -174,7 +181,7 @@ export class SceneGraph {
   }
 
   public appendChild(parent: SceneNode, child: SceneNode): void {
-    if (parent.type !== 'view') throw new Error('[SceneGraph] Only view nodes accept children')
+    if (parent.type !== 'view') devThrow('[SceneGraph] Only view nodes accept children')
     if (child.parent) this._detach(child)
     child.parent = parent
     ;(parent.children as SceneNode[]).push(child)
@@ -183,7 +190,7 @@ export class SceneGraph {
   }
 
   public insertChild(parent: SceneNode, child: SceneNode, index: number): void {
-    if (parent.type !== 'view') throw new Error('[SceneGraph] Only view nodes accept children')
+    if (parent.type !== 'view') devThrow('[SceneGraph] Only view nodes accept children')
     if (child.parent) this._detach(child)
     child.parent = parent
     ;(parent.children as SceneNode[]).splice(index, 0, child)
@@ -234,9 +241,13 @@ export class SceneGraph {
    * Yoga is updated; spatial index is refreshed after next layout.
    */
   public applyStyle(node: SceneNode, style: ViewStyle | TextStyle | ImageStyle): void {
-    const flatStyle = flattenStyle(style)
+    const flatStyle = flattenStyle({ ...node.style, ...style })
     node.style = flatStyle
-    syncStyleToYoga(node.yogaNode, { ...flatStyle, height: node.rect.h, width: node.rect.w })
+    syncStyleToYoga(node.yogaNode, flatStyle)
+    // Text nodes need explicit markDirty to recalculate size when text styles change
+    if (node.type === 'text') {
+      node.yogaNode.markDirty()
+    }
     this._markLayoutDirty(node)
   }
 
@@ -258,6 +269,26 @@ export class SceneGraph {
   /** Update scroll offset of any node. Does not trigger layout. */
   public setScroll(node: SceneNode, scroll: { x: number; y: number }): void {
     node.scroll = scroll
+  }
+
+  /**
+   * Directly set world position without Yoga layout - optimized for dragging.
+   * Updates worldRect and spatial index immediately without triggering layout.
+   * Call applyStyle after drag ends to sync position to Yoga.
+   */
+  public setWorldPosition(node: SceneNode, worldX: number, worldY: number): void {
+    const old = { ...node.worldRect }
+    node.worldRect.x = worldX
+    node.worldRect.y = worldY
+    // Update rect to match (relative to parent)
+    if (node.parent) {
+      node.rect.x = worldX - node.parent.worldRect.x + node.parent.scroll.x
+      node.rect.y = worldY - node.parent.worldRect.y + node.parent.scroll.y
+    } else {
+      node.rect.x = worldX
+      node.rect.y = worldY
+    }
+    this.spatialIndex.update(node, old)
   }
 
   // ── Layout ─────────────────────────────────────────────────────────────────
@@ -457,7 +488,7 @@ export class SceneGraph {
 
   private _reconstructNode(data: SerializedSceneNode): SceneNode {
     const node = this.createNode(data.type, data.style, { text: data.text, src: data.src })
-    node.scroll = data.scroll
+    node.scroll = data.scroll ?? { x: 0, y: 0 }
     if (data.type === 'view') {
       for (const child of data.children) this.appendChild(node, this._reconstructNode(child))
     }
@@ -472,22 +503,25 @@ export class SceneGraph {
         widthMode === MeasureMode.Exactly || widthMode === MeasureMode.AtMost
           ? width
           : CONFIG.TEXT_MEASURE_MAX_WIDTH
+
       const key = TextMeasureCache.makeKey(text, style, maxWidth)
       const cached = this.textMeasureCache.get(key)
       if (cached) return cached
 
       try {
+        const opts = buildParagraphOptions(this.ck, style)
         const para = this.fonts.makeParagraphSync(
           text,
-          style.fontFamily ?? CONFIG.TEXT_DEFAULT_FONT_FAMILY,
-          style as unknown as ParagraphOptions,
+          style.fontFamily ?? CONFIG.TEXT_FALLBACK_FONT_FAMILY,
+          opts,
           maxWidth,
         )
         const result = { width: para.getMaxIntrinsicWidth(), height: para.getHeight() }
         para.delete()
         this.textMeasureCache.set(key, result)
         return result
-      } catch {
+      } catch (e) {
+        console.warn('[SceneGraph] Text measurement failed:', e)
         return { width: 0, height: 0 }
       }
     })

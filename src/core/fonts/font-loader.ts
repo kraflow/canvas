@@ -1,4 +1,5 @@
 import type { FontStore } from './font-store'
+import { devThrow } from '../utils/dev-error'
 
 export interface FontLoader {
   load(key: string, url: string): Promise<ArrayBuffer>
@@ -35,7 +36,7 @@ export function createFontLoader(store: FontStore, maxConcurrent: number = 3): F
       active++
       fetch(item.url)
         .then((r) => {
-          if (!r.ok) throw new Error(`Font fetch failed: ${r.status} ${item.url}`)
+          if (!r.ok) devThrow(`Font fetch failed: ${r.status} ${item.url}`)
           return r.arrayBuffer()
         })
         .then((buf) => {

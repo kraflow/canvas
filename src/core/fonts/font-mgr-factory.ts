@@ -1,5 +1,6 @@
 import type { CanvasKit, FontMgr } from 'canvaskit-wasm'
 import type { FontStore } from './font-store'
+import { devThrow } from '../utils/dev-error'
 
 /**
  * Builds a FontMgr from the given CanvasKit, FontStore, and array of font buffer keys.
@@ -20,12 +21,12 @@ export function buildFontMgr(ck: CanvasKit, store: FontStore, keys: string[]): F
   const buffers = keys.map((k) => store.get(k)).filter((b): b is ArrayBuffer => b !== undefined)
 
   if (buffers.length === 0) {
-    throw new Error('[font-mgr-factory] No font buffers available to build FontMgr')
+    devThrow('[font-mgr-factory] No font buffers available to build FontMgr')
   }
 
   // All fallback fonts must go into the SAME FontMgr.FromData() call
   const mgr = ck.FontMgr.FromData(...buffers)
-  if (!mgr) throw new Error('[font-mgr-factory] FontMgr.FromData returned null')
+  if (!mgr) devThrow('[font-mgr-factory] FontMgr.FromData returned null')
 
   return mgr
 }

@@ -6,6 +6,7 @@ import {
   SceneGraph,
   InteractionManager,
   createFontSystem,
+  configure,
   type FontSystem,
   type SceneNode,
   type InteractionEvent,
@@ -31,7 +32,7 @@ import type { Canvas, CanvasKit } from 'canvaskit-wasm'
 // Playground-specific theme colors (not part of core library)
 const PLAYGROUND_VIEW_BG = new Float32Array([0.388, 0.4, 0.945, 0.1]) // rgba(99, 102, 241, 0.1)
 const PLAYGROUND_VIEW_BORDER = new Float32Array([0.388, 0.4, 0.945, 0.8]) // rgba(99, 102, 241, 0.8)
-const PLAYGROUND_TEXT_COLOR = new Float32Array([255, 255, 255, 1]) // rgba(255, 255, 255, 1)
+const PLAYGROUND_TEXT_COLOR = new Float32Array([0.2, 0.2, 0.2, 1]) // rgba(51, 51, 51, 1) - dark gray
 const PLAYGROUND_SCREEN_BG = new Float32Array([1, 1, 1, 1]) // rgba(255, 255, 255, 1)
 const PLAYGROUND_TEXT_BORDER = new Float32Array([0.925, 0.282, 0.6, 0.8]) // rgba(236, 72, 153, 0.8)
 const PLAYGROUND_IMAGE_BORDER = new Float32Array([0.176, 0.831, 0.749, 0.8]) // rgba(45, 212, 191, 0.8)
@@ -102,19 +103,38 @@ const addScreenAt = (x: number, y: number) => {
 const addNode = (type: 'view' | 'text' | 'image') => {
   if (!scene.value) return
 
+  let textContent = 'New Text Layer'
+  let imageUrl =
+    'https://picsum.photos/seed/' + Math.random().toString(36).substring(7) + '/400/300'
+
+  if (type === 'text') {
+    const input = prompt('Enter text content:', 'New Text Layer')
+    if (input !== null) textContent = input
+  } else if (type === 'image') {
+    const input = prompt(
+      'Enter image URL:',
+      'https://picsum.photos/seed/' + Math.random().toString(36).substring(7) + '/400/300',
+    )
+    if (input !== null) imageUrl = input
+  }
+
   // 1. Determine parent
   let parent: SceneNode | null = null
   const selectedIds = interaction.value?.getState().selectedNodes || new Set()
 
   if (selectedIds.size === 1) {
     const id = Array.from(selectedIds)[0]
-    const target = scene.value.getNode(id!)
-    if (target) {
-      // If it's a view or root, it's a valid parent
+    let target = scene.value.getNode(id!)
+    const screen = scene.value.getScreen(id!)
+
+    if (screen) {
+      parent = screen.root as SceneNode
+    } else if (target) {
+      // If selected target is not a view, find nearest view parent
+      while (target && target.type !== 'view') {
+        target = target.parent as SceneNode
+      }
       parent = target
-    } else {
-      const screen = scene.value.getScreen(id!)
-      if (screen) parent = screen.root as SceneNode
     }
   }
 
@@ -129,25 +149,36 @@ const addNode = (type: 'view' | 'text' | 'image') => {
     parent = firstScreen.root
   }
 
-  const newNode = scene.value.createNode(type, {
+  const isText = type === 'text'
+
+  const baseStyle = {
     backgroundColor: type === 'view' ? PLAYGROUND_VIEW_BG : undefined,
-    width: parent.rect.w - 20 * 2,
-    height: 50,
+    width: isText ? undefined : parent.rect.w - 20 * 2,
+    height: isText ? undefined : 200,
     margin: 20,
-    padding: 16,
+    padding: isText ? 0 : 16,
     borderRadius: 8,
-    borderWidth: 1.5,
+    borderWidth: type === 'view' ? 1.5 : 0,
     borderColor:
       type === 'view'
         ? PLAYGROUND_VIEW_BORDER
-        : type === 'text'
+        : isText
           ? PLAYGROUND_TEXT_BORDER
           : PLAYGROUND_IMAGE_BORDER,
-  } as ViewStyle)
+  }
+
+  const newNode = isText
+    ? scene.value.createNode(type, {
+        ...baseStyle,
+        color: PLAYGROUND_TEXT_COLOR,
+        fontSize: 16,
+      } as TextStyle)
+    : scene.value.createNode(type, baseStyle as ViewStyle)
 
   if (type === 'text') {
-    scene.value.setText(newNode, 'New Text Layer')
-    scene.value.applyStyle(newNode, { color: PLAYGROUND_TEXT_COLOR, fontSize: 16 } as TextStyle)
+    scene.value.setText(newNode, textContent)
+  } else if (type === 'image') {
+    scene.value.setSrc(newNode, imageUrl)
   }
 
   scene.value.appendChild(parent, newNode)
@@ -268,7 +299,20 @@ onMounted(async () => {
 
   interaction.value = new InteractionManager(canvasRef.value, scene.value, viewport)
 
-  // 3. Setup Interaction Listeners
+  // 3. Configure Premium Overlays
+  configure({
+    GRID_SHOW: showGrid.value,
+    OVERLAY_SELECTION_COLOR: [99, 102, 241, 1], // Indigo 500
+    OVERLAY_SELECTION_STROKE_WIDTH: 2,
+    OVERLAY_MARQUEE_FILL_COLOR: [99, 102, 241, 0.1],
+    OVERLAY_MARQUEE_STROKE_COLOR: [99, 102, 241, 0.5],
+    OVERLAY_GHOST_VALID_FILL: [34, 197, 94, 0.1], // Emerald 500
+    OVERLAY_GHOST_VALID_STROKE: [34, 197, 94, 0.5],
+    OVERLAY_GHOST_ERROR_FILL: [239, 68, 68, 0.1], // Rose 500
+    OVERLAY_GHOST_ERROR_STROKE: [239, 68, 68, 0.5],
+  })
+
+  // 4. Setup Interaction Listeners
   interaction.value.on((e: InteractionEvent) => {
     const state = interaction.value!.getState()
     interactionMode.value = state.mode
@@ -330,7 +374,6 @@ onMounted(async () => {
     if ((e.metaKey || e.ctrlKey) && e.key === "'") {
       e.preventDefault()
       showGrid.value = !showGrid.value
-      renderer.value?.requestFrame()
     }
   }
 
@@ -349,6 +392,11 @@ watch(interactionMode, (mode) => {
   if (interaction.value && interaction.value.getState().mode !== mode) {
     interaction.value.setMode(mode)
   }
+})
+
+watch(showGrid, (show) => {
+  configure({ GRID_SHOW: show })
+  renderer.value?.requestFrame()
 })
 
 // Stats and computed
@@ -374,6 +422,74 @@ const canvasCursor = computed(() => {
   if (isPlacingScreen.value) return 'crosshair'
   return 'default'
 })
+
+const selectedItem = computed(() => {
+  if (selectedNodeIds.value.size !== 1) return null
+  const id = Array.from(selectedNodeIds.value)[0]!
+  const node = scene.value?.getNode(id)
+  if (node) return { type: 'node', data: node }
+  const screen = scene.value?.getScreen(id)
+  if (screen) return { type: 'screen', data: screen }
+  return null
+})
+
+const deleteSelected = () => {
+  if (!selectedItem.value || !scene.value) return
+  const { type, data } = selectedItem.value
+  if (type === 'node') {
+    scene.value.destroyNode(data as SceneNode)
+  } else {
+    scene.value.removeScreen(data.id)
+  }
+  selectedNodeIds.value.clear()
+  interaction.value?.setSelection(new Set())
+  triggerRef(scene)
+  renderer.value?.requestFrame()
+}
+
+const updateStyle = (key: string, value: string | number | undefined) => {
+  if (!selectedItem.value || selectedItem.value.type !== 'node') return
+  const node = selectedItem.value.data as SceneNode
+  scene.value?.applyStyle(node, { [key]: value })
+  triggerRef(scene)
+  renderer.value?.requestFrame()
+}
+
+const updateContent = (value: string) => {
+  if (!selectedItem.value || selectedItem.value.type !== 'node') return
+  const node = selectedItem.value.data as SceneNode
+  if (node.type === 'text') {
+    scene.value?.setText(node, value)
+  } else if (node.type === 'image') {
+    scene.value?.setSrc(node, value)
+  }
+  triggerRef(scene)
+  renderer.value?.requestFrame()
+}
+
+const selectNode = (id: string) => {
+  if (!interaction.value) return
+  interaction.value.setSelection(new Set([id]))
+  const state = interaction.value.getState()
+  selectedNodeIds.value = state.selectedNodes
+  renderer.value?.requestFrame()
+}
+
+// Simple recursive layer rendering
+interface FlatNode extends SceneNode {
+  depth: number
+}
+
+const getAllNodesFlat = (nodes: SceneNode[], depth = 0): FlatNode[] => {
+  let result: FlatNode[] = []
+  for (const node of nodes) {
+    result.push({ ...node, depth })
+    if (node.type === 'view') {
+      result = [...result, ...getAllNodesFlat(node.children as SceneNode[], depth + 1)]
+    }
+  }
+  return result
+}
 </script>
 
 <template>
@@ -458,7 +574,6 @@ const canvasCursor = computed(() => {
       </div>
     </header>
 
-    <!-- Workspace -->
     <main class="workspace">
       <aside class="side-toolbar">
         <div class="node-tools">
@@ -485,6 +600,49 @@ const canvasCursor = computed(() => {
         </div>
       </aside>
 
+      <aside class="layers-panel">
+        <div class="panel-header">Layers</div>
+        <div class="panel-content">
+          <div v-for="screen in scene?.allScreens" :key="screen.id" class="screen-group">
+            <div
+              class="layer-item screen"
+              :class="{ selected: selectedNodeIds.has(screen.id) }"
+              @click="selectNode(screen.id)"
+            >
+              <svg viewBox="0 0 24 24" class="icon">
+                <path
+                  d="M21 2H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h7l-2 3v1h8v-1l-2-3h7c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H3V4h18v12z"
+                />
+              </svg>
+              <span class="name">{{ screen.name }}</span>
+            </div>
+            <div class="layer-list">
+              <div
+                v-for="node in getAllNodesFlat(screen.root.children as SceneNode[])"
+                :key="node.id"
+                class="layer-item node"
+                :class="{ selected: selectedNodeIds.has(node.id) }"
+                :style="{ paddingLeft: node.depth * 16 + 12 + 'px' }"
+                @click="selectNode(node.id)"
+              >
+                <svg v-if="node.type === 'view'" viewBox="0 0 24 24" class="icon">
+                  <path d="M3 3h18v18H3V3zm16 16V5H5v14h14z" />
+                </svg>
+                <svg v-else-if="node.type === 'text'" viewBox="0 0 24 24" class="icon">
+                  <path d="M5 4v3h5.5v12h3V7H19V4H5z" />
+                </svg>
+                <svg v-else-if="node.type === 'image'" viewBox="0 0 24 24" class="icon">
+                  <path
+                    d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"
+                  />
+                </svg>
+                <span class="name">{{ node.type }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
       <section class="canvas-viewport" :style="{ cursor: canvasCursor }">
         <canvas ref="canvasRef" class="main-canvas"></canvas>
         <div class="canvas-grid-overlay" v-if="screenCount === 0 && !isPlacingScreen">
@@ -502,7 +660,147 @@ const canvasCursor = computed(() => {
       <aside class="properties-panel">
         <div class="panel-header">Properties</div>
         <div class="panel-content">
-          <div class="empty-hint">Select an element to edit properties</div>
+          <div v-if="selectedItem" class="props-editor">
+            <div class="selection-badge">
+              <span class="type-capsule">{{ (selectedItem.data as any).type || 'Screen' }}</span>
+              <span class="id-text">{{ selectedItem.data.id }}</span>
+            </div>
+
+            <!-- Screen Specific -->
+            <div v-if="selectedItem.type === 'screen'" class="prop-group">
+              <label>Name</label>
+              <input
+                :value="(selectedItem.data as any).name"
+                @input="(e: any) => ((selectedItem!.data as any).name = e.target.value)"
+              />
+              <div class="prop-row">
+                <div class="prop-col">
+                  <label>X</label>
+                  <input
+                    type="number"
+                    :value="Math.round((selectedItem.data as any).x)"
+                    @change="
+                      (e: any) =>
+                        scene?.moveScreen(
+                          selectedItem!.data.id,
+                          Number(e.target.value),
+                          (selectedItem!.data as any).y,
+                        )
+                    "
+                  />
+                </div>
+                <div class="prop-col">
+                  <label>Y</label>
+                  <input
+                    type="number"
+                    :value="Math.round((selectedItem.data as any).y)"
+                    @change="
+                      (e: any) =>
+                        scene?.moveScreen(
+                          selectedItem!.data.id,
+                          (selectedItem!.data as any).x,
+                          Number(e.target.value),
+                        )
+                    "
+                  />
+                </div>
+              </div>
+            </div>
+
+            <!-- Node Common Layout -->
+            <div v-if="selectedItem.type === 'node'" class="prop-group">
+              <div class="group-title">Layout</div>
+              <div class="prop-row">
+                <div class="prop-col">
+                  <label>Width</label>
+                  <input
+                    type="number"
+                    :value="Math.round((selectedItem.data as any).style.width)"
+                    @change="(e: any) => updateStyle('width', Number(e.target.value))"
+                  />
+                </div>
+                <div class="prop-col">
+                  <label>Height</label>
+                  <input
+                    type="number"
+                    :value="Math.round((selectedItem.data as any).style.height)"
+                    @change="(e: any) => updateStyle('height', Number(e.target.value))"
+                  />
+                </div>
+              </div>
+              <div class="prop-row">
+                <div class="prop-col">
+                  <label>Radius</label>
+                  <input
+                    type="number"
+                    :value="(selectedItem.data as any).style.borderRadius"
+                    @change="(e: any) => updateStyle('borderRadius', Number(e.target.value))"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <!-- Node Styling -->
+            <div v-if="selectedItem.type === 'node'" class="prop-group">
+              <div class="group-title">Styling</div>
+              <label>Border Width</label>
+              <input
+                type="number"
+                :value="(selectedItem.data as any).style.borderWidth"
+                @change="(e: any) => updateStyle('borderWidth', Number(e.target.value))"
+              />
+            </div>
+
+            <!-- Node Content -->
+            <div
+              v-if="selectedItem.type === 'node' && (selectedItem.data as any).type === 'text'"
+              class="prop-group"
+            >
+              <div class="group-title">Text</div>
+              <label>Content</label>
+              <textarea
+                :value="(selectedItem.data as any).text"
+                @input="(e: any) => updateContent(e.target.value)"
+              ></textarea>
+              <label>Font Size</label>
+              <input
+                type="number"
+                :value="(selectedItem.data as any).style.fontSize"
+                @change="(e: any) => updateStyle('fontSize', Number(e.target.value))"
+              />
+            </div>
+
+            <div
+              v-if="selectedItem.type === 'node' && (selectedItem.data as any).type === 'image'"
+              class="prop-group"
+            >
+              <div class="group-title">Image</div>
+              <label>Source URL</label>
+              <textarea
+                :value="(selectedItem.data as any).src"
+                @change="(e: any) => updateContent(e.target.value)"
+              ></textarea>
+            </div>
+
+            <div class="actions-footer">
+              <button class="delete-btn" @click="deleteSelected">
+                <svg viewBox="0 0 24 24" class="icon">
+                  <path
+                    d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"
+                  />
+                </svg>
+                Delete Selection
+              </button>
+            </div>
+          </div>
+          <div v-else class="empty-hint">
+            <svg viewBox="0 0 24 24" class="icon large">
+              <path
+                d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"
+              />
+            </svg>
+            Select an element to edit properties
+          </div>
         </div>
       </aside>
     </main>
@@ -795,7 +1093,7 @@ const canvasCursor = computed(() => {
 }
 
 .properties-panel {
-  width: 240px;
+  width: 280px;
   background: rgba(18, 18, 20, 0.8);
   border-left: 1px solid rgba(255, 255, 255, 0.05);
   display: flex;
@@ -803,21 +1101,148 @@ const canvasCursor = computed(() => {
   z-index: 90;
 }
 .panel-header {
-  height: 48px;
+  height: 40px;
+  padding: 0 16px;
   display: flex;
   align-items: center;
-  padding: 0 16px;
+  font-size: 11px;
   font-weight: 600;
-  font-size: 14px;
-  background: rgba(255, 255, 255, 0.02);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #71717a;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
+.panel-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+}
 .empty-hint {
-  padding: 32px 16px;
-  text-align: center;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   color: #52525b;
+  text-align: center;
+  gap: 12px;
   font-size: 13px;
-  font-style: italic;
+}
+.icon.large {
+  width: 32px;
+  height: 32px;
+  opacity: 0.3;
+}
+
+.props-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.selection-badge {
+  background: rgba(99, 102, 241, 0.1);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+  padding: 8px 12px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.type-capsule {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #6366f1;
+}
+.id-text {
+  font-size: 11px;
+  color: #71717a;
+  font-family: monospace;
+}
+
+.prop-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.group-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #a1a1aa;
+  margin-bottom: 4px;
+}
+
+label {
+  font-size: 10px;
+  color: #71717a;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+input,
+textarea {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  padding: 6px 8px;
+  color: #fff;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+input:focus,
+textarea:focus {
+  outline: none;
+  border-color: #6366f1;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.prop-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.prop-col {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.actions-footer {
+  margin-top: 10px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.delete-btn {
+  width: 100%;
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  color: #ef4444;
+  padding: 10px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.delete-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: #ef4444;
+}
+.delete-btn .icon {
+  width: 16px;
+  height: 16px;
+  fill: currentColor;
 }
 
 .status-bar {

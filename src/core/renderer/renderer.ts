@@ -1,6 +1,7 @@
 import type { Canvas, CanvasKit, Surface } from 'canvaskit-wasm'
 import type { RendererOptions } from './types'
 import { loadCanvasKit } from './load'
+import { devThrow } from '../utils/dev-error'
 import type { Viewport } from '../viewport/Viewport'
 import { CONFIG } from '../constants'
 import { DrawContext } from './draw'
@@ -83,7 +84,7 @@ export class CanvasRenderer {
     }
 
     if (!this.surface) {
-      throw new Error('[CanvasRenderer] Failed to create CanvasKit WebGL surface')
+      devThrow('[CanvasRenderer] Failed to create CanvasKit WebGL surface')
     }
   }
 

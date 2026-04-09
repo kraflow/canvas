@@ -32,9 +32,19 @@ export function renderImage(
   const { x, y, w, h } = rect
   if (w <= 0 || h <= 0) return
 
-  // If no image, just render the view (background, borders, etc.)
+  // If no image, render skeleton placeholder
   if (!image) {
-    renderView(ck, canvas, style, rect, undefined, undefined, ctx)
+    renderView(
+      ck,
+      canvas,
+      style,
+      rect,
+      undefined,
+      () => {
+        drawSkeleton(ck, canvas, rect, style, ctx)
+      },
+      ctx,
+    )
     return
   }
 
@@ -236,4 +246,93 @@ function makeTintColorFilter(
 ): ReturnType<typeof ck.ColorFilter.MakeBlend> | null {
   const color = toColor(ck, tintColor)
   return ck.ColorFilter.MakeBlend(color, ck.BlendMode.SrcIn)
+}
+
+// =============================================================================
+// Skeleton placeholder for loading images
+// =============================================================================
+
+const SKELETON_BG_COLOR = new Float32Array([0.9, 0.9, 0.92, 1]) // Light gray background
+const SKELETON_SHINE_COLOR = new Float32Array([0.95, 0.95, 0.97, 1]) // Slightly lighter
+const IMAGE_ICON_COLOR = new Float32Array([0.75, 0.75, 0.78, 1]) // Icon color
+
+function drawSkeleton(
+  ck: CanvasKit,
+  canvas: Canvas,
+  rect: LayoutRect,
+  style: ImageStyle,
+  ctx?: DrawContext,
+): void {
+  const { x, y, w, h } = rect
+
+  // Background fill
+  const bgPaint = ctx ? ctx.paint() : new ck.Paint()
+  if (!ctx) bgPaint.setAntiAlias(true)
+  bgPaint.setStyle(ck.PaintStyle.Fill)
+  bgPaint.setColor(SKELETON_BG_COLOR)
+  canvas.drawRect(Float32Array.from([x, y, x + w, y + h]), bgPaint)
+
+  // Draw subtle diagonal shine pattern
+  const shinePaint = ctx ? ctx.paint() : new ck.Paint()
+  if (!ctx) shinePaint.setAntiAlias(true)
+  shinePaint.setStyle(ck.PaintStyle.Fill)
+  shinePaint.setColor(SKELETON_SHINE_COLOR)
+
+  const stripeWidth = Math.min(w, h) * 0.15
+  const pathBuilder = new ck.PathBuilder()
+  pathBuilder.moveTo(x, y + h)
+  pathBuilder.lineTo(x + stripeWidth, y + h)
+  pathBuilder.lineTo(x + w, y)
+  pathBuilder.lineTo(x + w - stripeWidth, y)
+  pathBuilder.close()
+  const path = pathBuilder.snapshot()
+  canvas.drawPath(path, shinePaint)
+  path.delete()
+  pathBuilder.delete()
+
+  // Draw simple image icon in center
+  const iconSize = Math.min(w, h) * 0.3
+  const iconX = x + (w - iconSize) / 2
+  const iconY = y + (h - iconSize) / 2
+
+  const iconPaint = ctx ? ctx.paint() : new ck.Paint()
+  if (!ctx) iconPaint.setAntiAlias(true)
+  iconPaint.setStyle(ck.PaintStyle.Stroke)
+  iconPaint.setStrokeWidth(Math.max(2, iconSize * 0.08))
+  iconPaint.setColor(IMAGE_ICON_COLOR)
+
+  // Draw a simple picture frame icon
+  const framePad = iconSize * 0.1
+  const frameBuilder = new ck.PathBuilder()
+  // Frame rectangle
+  frameBuilder.addRect(
+    Float32Array.from([
+      iconX + framePad,
+      iconY + framePad,
+      iconX + iconSize - framePad,
+      iconY + iconSize - framePad,
+    ]),
+  )
+  // Mountain line
+  frameBuilder.moveTo(iconX + framePad, iconY + iconSize - framePad * 3)
+  frameBuilder.lineTo(iconX + iconSize * 0.4, iconY + iconSize * 0.5)
+  frameBuilder.lineTo(iconX + iconSize * 0.6, iconY + iconSize * 0.6)
+  frameBuilder.lineTo(iconX + iconSize - framePad, iconY + framePad * 2)
+  // Sun circle (as small circle path)
+  const sunX = iconX + iconSize * 0.7
+  const sunY = iconY + iconSize * 0.3
+  const sunR = iconSize * 0.1
+  frameBuilder.moveTo(sunX + sunR, sunY)
+  frameBuilder.arc(sunX, sunY, sunR, 0, Math.PI * 2, false)
+
+  const framePath = frameBuilder.snapshot()
+  canvas.drawPath(framePath, iconPaint)
+  framePath.delete()
+  frameBuilder.delete()
+
+  if (!ctx) {
+    bgPaint.delete()
+    shinePaint.delete()
+    iconPaint.delete()
+  }
 }

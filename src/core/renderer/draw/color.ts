@@ -36,6 +36,12 @@ export function toColor(ck: CanvasKit, value: ColorValue): Color {
     return ck.Color(r, g, b, a / 255)
   }
 
+  // CSS string
+  if (typeof value === 'string') {
+    // ck.parseColorString returns a Float32Array
+    return ck.parseColorString(value)
+  }
+
   // Fallback: transparent
   return ck.Color(0, 0, 0, 0)
 }

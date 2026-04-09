@@ -46,7 +46,7 @@ export interface SerializedSceneNode {
   style: ViewStyle | TextStyle | ImageStyle
   text?: string
   src?: string
-  scroll: { x: number; y: number }
+  scroll?: { x: number; y: number }
   children: SerializedSceneNode[]
 }
 

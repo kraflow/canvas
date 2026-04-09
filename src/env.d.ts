@@ -1,6 +1,11 @@
 declare const __DEV__: boolean
 declare const __VERSION__: string
 
+declare module 'canvaskit-wasm/bin/canvaskit.wasm?url' {
+  const url: string
+  export default url
+}
+
 // CDN module for yoga-layout in production builds
 declare module 'https://cdn.jsdelivr.net/npm/yoga-layout@3.2.1/+esm' {
   export * from 'yoga-layout/load'

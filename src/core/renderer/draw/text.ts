@@ -127,7 +127,7 @@ export async function renderTextAsync(
 // Paragraph options builder
 // =============================================================================
 
-function buildParagraphOptions(ck: CanvasKit, style: KraflowTextStyle): ParagraphOptions {
+export function buildParagraphOptions(ck: CanvasKit, style: KraflowTextStyle): ParagraphOptions {
   const opts: ParagraphOptions = {
     fontSize: style.fontSize ?? CONFIG.TEXT_DEFAULT_FONT_SIZE,
 

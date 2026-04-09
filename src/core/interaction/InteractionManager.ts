@@ -69,6 +69,11 @@ export class InteractionManager {
     }
   }
 
+  public setSelection(ids: Set<string>) {
+    this.state.selectedNodes = new Set(ids)
+    this.dispatch('modeChange', null, new PointerEvent('pointermove'), 0, 0) // Trigger redraw
+  }
+
   public on(callback: InteractionCallback) {
     this.listeners.add(callback)
     return () => this.listeners.delete(callback)
@@ -223,15 +228,8 @@ export class InteractionManager {
                 Math.min(targetWorldY, parentBounds.y + parentBounds.h - node.rect.h),
               )
 
-              const localX = targetWorldX - parentBounds.x
-              const localY = targetWorldY - parentBounds.y
-
-              this.scene.applyStyle(node, {
-                ...style,
-                position: 'absolute',
-                left: localX,
-                top: localY,
-              })
+              // Use setWorldPosition during drag to avoid expensive Yoga layout
+              this.scene.setWorldPosition(node, targetWorldX, targetWorldY)
             } else {
               // Node has no parent but isn't a screen? Should be handled by snapback later.
               this.scene.applyStyle(node, { ...style, left: targetWorldX, top: targetWorldY })

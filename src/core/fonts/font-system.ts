@@ -1,5 +1,6 @@
 import type { CanvasKit, FontMgr, Paragraph } from 'canvaskit-wasm'
 import { createFontStore, fontKey } from './font-store'
+import { devThrow } from '../utils/dev-error'
 import { createFontLoader } from './font-loader'
 import { createTypefaceRegistry } from './typeface-registry'
 import { buildFontMgr } from './font-mgr-factory'
@@ -170,7 +171,7 @@ export async function createFontSystem(ck: CanvasKit, manifest: FontManifest): P
     opts: ParagraphOptions,
     maxWidth: number,
   ) {
-    if (isDisposed) throw new Error('FontSystem is disposed')
+    if (isDisposed) devThrow('FontSystem is disposed')
     const weight = opts.fontWeight ?? 400
     await prepareForText(text, primaryFamily, weight)
     return makeParagraphSync(text, primaryFamily, opts, maxWidth)
@@ -182,7 +183,7 @@ export async function createFontSystem(ck: CanvasKit, manifest: FontManifest): P
     opts: ParagraphOptions,
     maxWidth: number,
   ) {
-    if (isDisposed) throw new Error('FontSystem is disposed')
+    if (isDisposed) devThrow('FontSystem is disposed')
     const segments = segmentText(text, manifest.families, primaryFamily)
     return buildParagraph(ck, fontMgr, segments, opts, maxWidth)
   }
