@@ -122,7 +122,7 @@ Extends `FlexStyle`. All visual-only properties (not consumed by Yoga — used b
 
 ```ts
 {
-  backgroundColor: ColorValue,  // Float32Array [r,g,b,a] or number
+  backgroundColor: Color,  // Float32Array [r,g,b,a] or number
   opacity: number,              // 0-1
 }
 ```
@@ -131,11 +131,11 @@ Extends `FlexStyle`. All visual-only properties (not consumed by Yoga — used b
 
 ```ts
 {
-  borderColor: ColorValue,
-  borderTopColor: ColorValue,
-  borderBottomColor: ColorValue,
-  borderLeftColor: ColorValue,
-  borderRightColor: ColorValue,
+  borderColor: Color,
+  borderTopColor: Color,
+  borderBottomColor: Color,
+  borderLeftColor: Color,
+  borderRightColor: Color,
   borderStyle: 'solid' | 'dotted' | 'dashed',
   borderRadius: number | string,
   borderTopLeftRadius: number | string,
@@ -159,7 +159,7 @@ interface BoxShadowValue {
   offsetY: number
   blurRadius?: number
   spreadDistance?: number
-  color?: ColorValue
+  color?: Color
   inset?: boolean         // true = inner shadow
 }
 ```
@@ -214,7 +214,7 @@ interface BoxShadowValue {
 
 ```ts
 {
-  outlineColor: ColorValue,
+  outlineColor: Color,
   outlineOffset: number,
   outlineStyle: 'solid' | 'dotted' | 'dashed',
   outlineWidth: number,
@@ -238,7 +238,7 @@ Extends `ViewStyle`.
 
 ```ts
 {
-  color: ColorValue,
+  color: Color,
   fontFamily: string,
   fontSize: number,
   fontWeight: 'normal' | 'bold' | 100-900,
@@ -250,8 +250,8 @@ Extends `ViewStyle`.
   textAlignVertical: 'auto' | 'top' | 'bottom' | 'center',
   textDecorationLine: 'none' | 'underline' | 'line-through' | 'underline line-through',
   textDecorationStyle: 'solid' | 'double' | 'dotted' | 'dashed',
-  textDecorationColor: ColorValue,
-  textShadowColor: ColorValue,
+  textDecorationColor: Color,
+  textShadowColor: Color,
   textShadowOffset: { width: number, height: number },
   textShadowRadius: number,
   textTransform: 'none' | 'uppercase' | 'lowercase' | 'capitalize',
@@ -269,14 +269,14 @@ Extends `ViewStyle`.
 {
   resizeMode: 'cover' | 'contain' | 'stretch' | 'repeat' | 'center',
   objectFit: 'cover' | 'contain' | 'fill' | 'scale-down',
-  tintColor: ColorValue,
+  tintColor: Color,
   overlayColor: string,  // Android only
 }
 ```
 
 ---
 
-## ColorValue
+## Color
 
 Colors can be specified as:
 

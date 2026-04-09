@@ -19,8 +19,7 @@ export function drawHoverHighlight(
   paint.setStyle(ck.PaintStyle.Stroke)
   paint.setStrokeWidth(CONFIG.OVERLAY_HOVER_STROKE_WIDTH / zoom)
 
-  const [r, g, b, a] = CONFIG.OVERLAY_HOVER_COLOR as [number, number, number, number]
-  paint.setColor(ck.Color(r / 255, g / 255, b / 255, a))
+  paint.setColor(CONFIG.OVERLAY_HOVER_COLOR)
 
   const dashValues = CONFIG.OVERLAY_HOVER_DASH.map((v) => v / zoom)
   const dash = ctx ? ctx.dashEffect(dashValues) : ck.PathEffect.MakeDash(dashValues, 0)
@@ -54,8 +53,7 @@ export function drawSelectionHighlight(
   paint.setStyle(ck.PaintStyle.Stroke)
   paint.setStrokeWidth(CONFIG.OVERLAY_SELECTION_STROKE_WIDTH / zoom)
 
-  const [r, g, b, a] = CONFIG.OVERLAY_SELECTION_COLOR as [number, number, number, number]
-  paint.setColor(ck.Color(r / 255, g / 255, b / 255, a))
+  paint.setColor(CONFIG.OVERLAY_SELECTION_COLOR)
 
   const offset = CONFIG.OVERLAY_SELECTION_OFFSET / zoom
   const skRect = ctx
@@ -91,15 +89,13 @@ export function drawMarqueeSelection(
 
   // Fill
   paint.setStyle(ck.PaintStyle.Fill)
-  const [fr, fg, fb, fa] = CONFIG.OVERLAY_MARQUEE_FILL_COLOR as [number, number, number, number]
-  paint.setColor(ck.Color(fr / 255, fg / 255, fb / 255, fa))
+  paint.setColor(CONFIG.OVERLAY_MARQUEE_FILL_COLOR)
   canvas.drawRect(skRect, paint)
 
   // Stroke
   paint.setStyle(ck.PaintStyle.Stroke)
   paint.setStrokeWidth(CONFIG.OVERLAY_MARQUEE_STROKE_WIDTH / zoom)
-  const [sr, sg, sb, sa] = CONFIG.OVERLAY_MARQUEE_STROKE_COLOR as [number, number, number, number]
-  paint.setColor(ck.Color(sr / 255, sg / 255, sb / 255, sa))
+  paint.setColor(CONFIG.OVERLAY_MARQUEE_STROKE_COLOR)
   canvas.drawRect(skRect, paint)
 
   if (!ctx) paint.delete()
@@ -123,26 +119,20 @@ export function drawPlacementGhost(
     ? ctx.rect(rect.x, rect.y, rect.x + rect.w, rect.y + rect.h)
     : ck.LTRBRect(rect.x, rect.y, rect.x + rect.w, rect.y + rect.h)
 
-  const fillColor = isError
-    ? (CONFIG.OVERLAY_GHOST_ERROR_FILL as number[])
-    : (CONFIG.OVERLAY_GHOST_VALID_FILL as number[])
+  const fillColor = isError ? CONFIG.OVERLAY_GHOST_ERROR_FILL : CONFIG.OVERLAY_GHOST_VALID_FILL
   const strokeColor = isError
-    ? (CONFIG.OVERLAY_GHOST_ERROR_STROKE as number[])
-    : (CONFIG.OVERLAY_GHOST_VALID_STROKE as number[])
+    ? CONFIG.OVERLAY_GHOST_ERROR_STROKE
+    : CONFIG.OVERLAY_GHOST_VALID_STROKE
 
   // Fill
   paint.setStyle(ck.PaintStyle.Fill)
-  paint.setColor(
-    ck.Color(fillColor[0]! / 255, fillColor[1]! / 255, fillColor[2]! / 255, fillColor[3]!),
-  )
+  paint.setColor(fillColor)
   canvas.drawRect(skRect, paint)
 
   // Stroke
   paint.setStyle(ck.PaintStyle.Stroke)
   paint.setStrokeWidth(CONFIG.OVERLAY_GHOST_STROKE_WIDTH / zoom)
-  paint.setColor(
-    ck.Color(strokeColor[0]! / 255, strokeColor[1]! / 255, strokeColor[2]! / 255, strokeColor[3]!),
-  )
+  paint.setColor(strokeColor)
   canvas.drawRect(skRect, paint)
 
   if (!ctx) paint.delete()

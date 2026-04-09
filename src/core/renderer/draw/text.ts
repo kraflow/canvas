@@ -1,9 +1,8 @@
 import type { Canvas, CanvasKit, Paragraph } from 'canvaskit-wasm'
-import type { ColorValue, TextStyle as KraflowTextStyle } from '@/core/styles'
+import type { TextStyle as KraflowTextStyle } from '@/core/styles'
 import type { FontSystem, ParagraphOptions } from '@/core/fonts'
 import type { LayoutRect } from '../types'
 import type { DrawContext } from './draw-context'
-import { toColor } from './color'
 
 import { CONFIG } from '../../constants'
 import { resolveRadii, isSharpRect, makeRRect } from './path'
@@ -132,7 +131,7 @@ export function buildParagraphOptions(ck: CanvasKit, style: KraflowTextStyle): P
     fontSize: style.fontSize ?? CONFIG.TEXT_DEFAULT_FONT_SIZE,
 
     // Color
-    color: style.color ? toColorF32(ck, style.color) : new Float32Array([0, 0, 0, 1]),
+    color: style.color ? style.color : new Float32Array([0, 0, 0, 1]),
 
     // Font
     fontFamilies: style.fontFamily ? [style.fontFamily] : undefined,
@@ -155,9 +154,7 @@ export function buildParagraphOptions(ck: CanvasKit, style: KraflowTextStyle): P
     // Decoration
     decoration: resolveDecoration(ck, style.textDecorationLine),
     decorationStyle: resolveDecorationStyle(ck, style.textDecorationStyle),
-    decorationColor: style.textDecorationColor
-      ? toColorF32(ck, style.textDecorationColor)
-      : undefined,
+    decorationColor: style.textDecorationColor ? style.textDecorationColor : undefined,
 
     // Shadow
     textShadow: resolveTextShadow(ck, style),
@@ -284,8 +281,8 @@ function resolveTextShadow(ck: CanvasKit, style: KraflowTextStyle): ParagraphOpt
 
   return {
     color: style.textShadowColor
-      ? toColorF32(ck, style.textShadowColor)
-      : new Float32Array([0, 0, 0, CONFIG.TEXT_DEFAULT_SHADOW_ALPHA]),
+      ? style.textShadowColor
+      : ck.Color(0, 0, 0, CONFIG.TEXT_DEFAULT_SHADOW_ALPHA),
     offsetX: style.textShadowOffset?.width ?? 0,
     offsetY: style.textShadowOffset?.height ?? 0,
     blurRadius: style.textShadowRadius ?? 0,
@@ -325,13 +322,4 @@ function resolveFontFeatures(
   }
 
   return features.length > 0 ? features : undefined
-}
-
-// =============================================================================
-// Color helper
-// =============================================================================
-
-function toColorF32(ck: CanvasKit, value: ColorValue): Float32Array {
-  const c = toColor(ck, value)
-  return c instanceof Float32Array ? c : Float32Array.from(c as unknown as number[])
 }

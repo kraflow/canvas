@@ -36,8 +36,7 @@ export function renderInfiniteGrid(
 
   // 1. Draw Minor/Sub Grid (only when zoomed in)
   if (showSubGrid) {
-    const [r, g, b, a] = CONFIG.GRID_COLOR_MINOR
-    paint.setColor(ck.Color(r! / 255, g! / 255, b! / 255, a!))
+    paint.setColor(CONFIG.GRID_COLOR_MINOR)
     paint.setStrokeWidth(CONFIG.GRID_STROKE_WIDTH_MINOR / zoom)
 
     const startX = Math.floor(bounds.left / subGridSize) * subGridSize
@@ -55,8 +54,7 @@ export function renderInfiniteGrid(
   }
 
   // 2. Draw Major Grid
-  const [mr, mg, mb, ma] = CONFIG.GRID_COLOR_MAJOR
-  paint.setColor(ck.Color(mr! / 255, mg! / 255, mb! / 255, ma!))
+  paint.setColor(CONFIG.GRID_COLOR_MAJOR)
   paint.setStrokeWidth(CONFIG.GRID_STROKE_WIDTH_MAJOR / zoom)
 
   const majorStartX = Math.floor(bounds.left / baseSize) * baseSize
@@ -70,8 +68,7 @@ export function renderInfiniteGrid(
   }
 
   // 3. Draw Axis Lines (World 0,0)
-  const [ar, ag, ab, aa] = CONFIG.GRID_COLOR_AXIS
-  paint.setColor(ck.Color(ar! / 255, ag! / 255, ab! / 255, aa!))
+  paint.setColor(CONFIG.GRID_COLOR_AXIS)
   paint.setStrokeWidth(CONFIG.GRID_STROKE_WIDTH_AXIS / zoom)
 
   // Y-axis (Vertical line at x=0)

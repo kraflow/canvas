@@ -1,7 +1,5 @@
-import type { InputColor } from 'canvaskit-wasm'
+import type { Color } from 'canvaskit-wasm'
 import type { FlexStyle } from './flex'
-
-export type ColorValue = InputColor
 
 // ─── Transform types ──────────────────────────────────────────────────────────
 
@@ -67,7 +65,7 @@ export interface DropShadowValue {
   offsetX: number
   offsetY: number
   standardDeviation?: number
-  color?: ColorValue
+  color?: Color
 }
 
 /**
@@ -79,7 +77,7 @@ export interface BoxShadowValue {
   offsetY: number | string
   blurRadius?: number | string
   spreadDistance?: number | string
-  color?: ColorValue
+  color?: Color
   inset?: boolean
 }
 
@@ -92,7 +90,7 @@ export interface ShadowStyle {
 
 export interface ViewStyle extends FlexStyle, ShadowStyle {
   // ── Background ──────────────────────────────────────────────────────────────
-  backgroundColor?: ColorValue
+  backgroundColor?: Color
 
   // ── Opacity & visibility ────────────────────────────────────────────────────
   opacity?: number
@@ -102,23 +100,23 @@ export interface ViewStyle extends FlexStyle, ShadowStyle {
   overflow?: 'visible' | 'hidden' | 'scroll'
 
   // ── Border colors ───────────────────────────────────────────────────────────
-  borderColor?: ColorValue
-  borderTopColor?: ColorValue
-  borderBottomColor?: ColorValue
-  borderLeftColor?: ColorValue
-  borderRightColor?: ColorValue
+  borderColor?: Color
+  borderTopColor?: Color
+  borderBottomColor?: Color
+  borderLeftColor?: Color
+  borderRightColor?: Color
   /** LTR=borderRightColor, RTL=borderLeftColor */
-  borderEndColor?: ColorValue
+  borderEndColor?: Color
   /** LTR=borderLeftColor, RTL=borderRightColor */
-  borderStartColor?: ColorValue
+  borderStartColor?: Color
   /** Equivalent to borderTopColor + borderBottomColor */
-  borderBlockColor?: ColorValue
-  borderBlockStartColor?: ColorValue
-  borderBlockEndColor?: ColorValue
+  borderBlockColor?: Color
+  borderBlockStartColor?: Color
+  borderBlockEndColor?: Color
   /** Equivalent to borderLeftColor + borderRightColor */
-  borderInlineColor?: ColorValue
-  borderInlineStartColor?: ColorValue
-  borderInlineEndColor?: ColorValue
+  borderInlineColor?: Color
+  borderInlineStartColor?: Color
+  borderInlineEndColor?: Color
 
   // ── Border radii ────────────────────────────────────────────────────────────
   borderRadius?: number | string
@@ -171,7 +169,7 @@ export interface ViewStyle extends FlexStyle, ShadowStyle {
     | 'luminosity'
 
   // ── Outline (New Architecture) ───────────────────────────────────────────────
-  outlineColor?: ColorValue
+  outlineColor?: Color
   outlineOffset?: number
   outlineStyle?: 'solid' | 'dotted' | 'dashed'
   outlineWidth?: number

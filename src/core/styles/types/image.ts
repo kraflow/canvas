@@ -1,4 +1,5 @@
-import type { ColorValue, ViewStyle } from './view'
+import type { Color } from 'canvaskit-wasm'
+import type { ViewStyle } from './view'
 
 export interface ImageStyle extends ViewStyle {
   // ── Resize behavior ─────────────────────────────────────────────────────────
@@ -15,7 +16,7 @@ export interface ImageStyle extends ViewStyle {
 
   // ── Tint ────────────────────────────────────────────────────────────────────
   /** Replaces all non-transparent pixels with this color */
-  tintColor?: ColorValue
+  tintColor?: Color
 
   // ── Borders (narrowed subset from ViewStyle; Image accepts only these) ───────
   borderRadius?: number | string
@@ -23,7 +24,7 @@ export interface ImageStyle extends ViewStyle {
   borderTopRightRadius?: number | string
   borderBottomLeftRadius?: number | string
   borderBottomRightRadius?: number | string
-  borderColor?: ColorValue
+  borderColor?: Color
   borderWidth?: number
 
   // ── Overflow ────────────────────────────────────────────────────────────────

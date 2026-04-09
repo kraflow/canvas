@@ -5,14 +5,9 @@ import type {
   ColorFilter,
   InputRRect,
   BlendMode,
+  Color,
 } from 'canvaskit-wasm'
-import type {
-  ViewStyle,
-  TransformFunction,
-  FilterFunction,
-  BoxShadowValue,
-  ColorValue,
-} from '@/core/styles'
+import type { ViewStyle, TransformFunction, FilterFunction, BoxShadowValue } from '@/core/styles'
 import type { LayoutRect } from '../types'
 import { DrawContext } from './draw-context'
 import { toColor } from './color'
@@ -380,7 +375,7 @@ function buildImageFilter(
       const ds = f.dropShadow
       if (typeof ds === 'object' && ds !== null) {
         const sigma = (ds.standardDeviation ?? 0) / 2
-        const color = ds.color ? toColor(ck, ds.color) : ck.Color(0, 0, 0, 0.75)
+        const color = ds.color ? ds.color : ck.Color(0, 0, 0, 0.75)
         current = ck.ImageFilter.MakeDropShadow(ds.offsetX, ds.offsetY, sigma, sigma, color, null)
       }
     }
@@ -545,7 +540,7 @@ function drawOutsetBoxShadows(
     const spread = resolveDimension(shadow.spreadDistance ?? 0, rect.w)
     const blurRadius = resolveDimension(shadow.blurRadius ?? 0, rect.w)
     const sigma = blurRadius / 2
-    const color = shadow.color ? toColor(ck, shadow.color) : CONFIG.BOX_SHADOW_DEFAULT_COLOR_FLOAT
+    const color = shadow.color ? shadow.color : CONFIG.BOX_SHADOW_DEFAULT_COLOR
 
     const shadowRect: LayoutRect = {
       x: rect.x + resolveDimension(shadow.offsetX, rect.w) - spread,
@@ -598,7 +593,7 @@ function drawInsetBoxShadows(
     const spread = resolveDimension(shadow.spreadDistance ?? 0, rect.w)
     const blurRadius = resolveDimension(shadow.blurRadius ?? 0, rect.w)
     const sigma = blurRadius / 2
-    const color = shadow.color ? toColor(ck, shadow.color) : CONFIG.BOX_SHADOW_DEFAULT_COLOR_FLOAT
+    const color = shadow.color ? shadow.color : CONFIG.BOX_SHADOW_DEFAULT_COLOR
 
     const offsetX = resolveDimension(shadow.offsetX, rect.w)
     const offsetY = resolveDimension(shadow.offsetY, rect.h)
@@ -721,7 +716,7 @@ function drawBorders(
 function drawUniformBorder(
   ck: CanvasKit,
   canvas: Canvas,
-  color: ColorValue,
+  color: Color,
   width: number,
   borderStyle: 'solid' | 'dotted' | 'dashed',
   rect: LayoutRect,
@@ -769,10 +764,10 @@ interface SideWidths {
 }
 
 interface SideColors {
-  top: ColorValue | undefined
-  right: ColorValue | undefined
-  bottom: ColorValue | undefined
-  left: ColorValue | undefined
+  top: Color | undefined
+  right: Color | undefined
+  bottom: Color | undefined
+  left: Color | undefined
 }
 
 function drawPerSideBorders(
@@ -897,7 +892,7 @@ function drawPerSideBorders(
       ex: number
       ey: number
       width: number
-      color: ColorValue | undefined
+      color: Color | undefined
     }> = [
       {
         sx: x,
@@ -967,7 +962,7 @@ function drawOutline(
   if (outlineWidth <= 0) return
 
   const outlineOffset = style.outlineOffset ?? 0
-  const outlineColor = style.outlineColor ? toColor(ck, style.outlineColor) : ck.Color(0, 0, 0, 1)
+  const outlineColor = style.outlineColor ?? ck.Color(0, 0, 0, 1)
   const outlineStyle = style.outlineStyle ?? 'solid'
 
   const totalOffset = outlineOffset + outlineWidth / 2

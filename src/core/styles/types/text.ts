@@ -1,8 +1,9 @@
-import type { ColorValue, ViewStyle } from './view'
+import type { Color } from 'canvaskit-wasm'
+import type { ViewStyle } from './view'
 
 export interface TextStyle extends ViewStyle {
   // ── Color ───────────────────────────────────────────────────────────────────
-  color?: ColorValue
+  color?: Color
 
   // ── Font ────────────────────────────────────────────────────────────────────
   fontFamily?: string
@@ -68,10 +69,10 @@ export interface TextStyle extends ViewStyle {
   /** iOS only. Default: 'solid' */
   textDecorationStyle?: 'solid' | 'double' | 'dotted' | 'dashed'
   /** iOS only */
-  textDecorationColor?: ColorValue
+  textDecorationColor?: Color
 
   // ── Shadow ──────────────────────────────────────────────────────────────────
-  textShadowColor?: ColorValue
+  textShadowColor?: Color
   textShadowOffset?: { width?: number; height?: number }
   textShadowRadius?: number
 

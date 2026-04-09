@@ -1,3 +1,6 @@
+import type { Color } from 'canvaskit-wasm'
+import { arrayToColor } from './renderer'
+
 /**
  * Centralized live configuration for visual styles, dimensions, and theme colors.
  * All values are getters - reading current value from the config object.
@@ -10,24 +13,24 @@
 
 interface ConfigStore {
   // Core Colors
-  COLOR_CANVAS_BG_FLOAT: Float32Array
+  COLOR_CANVAS_BG: Color
 
   // Overlays
-  OVERLAY_HOVER_COLOR: readonly number[]
+  OVERLAY_HOVER_COLOR: Color
   OVERLAY_HOVER_STROKE_WIDTH: number
   OVERLAY_HOVER_DASH: readonly number[]
-  OVERLAY_SELECTION_COLOR: readonly number[]
+  OVERLAY_SELECTION_COLOR: Color
   OVERLAY_SELECTION_STROKE_WIDTH: number
   OVERLAY_SELECTION_OFFSET: number
-  OVERLAY_MARQUEE_FILL_COLOR: readonly number[]
-  OVERLAY_MARQUEE_STROKE_COLOR: readonly number[]
+  OVERLAY_MARQUEE_FILL_COLOR: Color
+  OVERLAY_MARQUEE_STROKE_COLOR: Color
   OVERLAY_MARQUEE_STROKE_WIDTH: number
-  OVERLAY_GHOST_VALID_FILL: readonly number[]
-  OVERLAY_GHOST_VALID_STROKE: readonly number[]
-  OVERLAY_GHOST_ERROR_FILL: readonly number[]
-  OVERLAY_GHOST_ERROR_STROKE: readonly number[]
+  OVERLAY_GHOST_VALID_FILL: Color
+  OVERLAY_GHOST_VALID_STROKE: Color
+  OVERLAY_GHOST_ERROR_FILL: Color
+  OVERLAY_GHOST_ERROR_STROKE: Color
   OVERLAY_GHOST_STROKE_WIDTH: number
-  OVERLAY_SCREEN_TITLE_COLOR: Float32Array
+  OVERLAY_SCREEN_TITLE_COLOR: Color
   OVERLAY_SCREEN_TITLE_FONT_SIZE: number
   OVERLAY_SCREEN_TITLE_MARGIN_Y: number
 
@@ -39,9 +42,9 @@ interface ConfigStore {
 
   // Grid
   GRID_SHOW: boolean
-  GRID_COLOR_MINOR: readonly number[]
-  GRID_COLOR_MAJOR: readonly number[]
-  GRID_COLOR_AXIS: readonly number[]
+  GRID_COLOR_MINOR: Color
+  GRID_COLOR_MAJOR: Color
+  GRID_COLOR_AXIS: Color
   GRID_SUB_GRID_THRESHOLD: number
   GRID_BASE_SIZE: number
   GRID_SUB_GRID_DIVISION: number
@@ -83,7 +86,7 @@ interface ConfigStore {
   LUMINANCE_HUE_BLUE_WEIGHT: number
 
   // Box Shadow
-  BOX_SHADOW_DEFAULT_COLOR_FLOAT: Float32Array
+  BOX_SHADOW_DEFAULT_COLOR: Color
 
   // Keyboard
   KEYBOARD_PAN_SHORTCUT: string
@@ -96,24 +99,24 @@ interface ConfigStore {
 function createDefaults(): ConfigStore {
   return {
     // Core Colors
-    COLOR_CANVAS_BG_FLOAT: new Float32Array([0.047, 0.047, 0.055, 1]), // rgba(0.047, 0.047, 0.055, 1)
+    COLOR_CANVAS_BG: arrayToColor(12, 12, 12), // rgba(12, 12, 12, 1)
 
     // Overlays
-    OVERLAY_HOVER_COLOR: [99, 102, 241, 0.4], // rgba(99, 102, 241, 0.4)
+    OVERLAY_HOVER_COLOR: arrayToColor(99, 102, 241, 0.4), // rgba(99, 102, 241, 0.4)
     OVERLAY_HOVER_STROKE_WIDTH: 1.5,
     OVERLAY_HOVER_DASH: [5, 5],
-    OVERLAY_SELECTION_COLOR: [99, 102, 241, 1], // rgba(99, 102, 241, 1)
+    OVERLAY_SELECTION_COLOR: arrayToColor(99, 102, 241), // rgba(99, 102, 241, 1)
     OVERLAY_SELECTION_STROKE_WIDTH: 2,
     OVERLAY_SELECTION_OFFSET: 1,
-    OVERLAY_MARQUEE_FILL_COLOR: [99, 102, 241, 0.1], // rgba(99, 102, 241, 0.1)
-    OVERLAY_MARQUEE_STROKE_COLOR: [99, 102, 241, 0.5], // rgba(99, 102, 241, 0.5)
+    OVERLAY_MARQUEE_FILL_COLOR: arrayToColor(99, 102, 241, 0.1), // rgba(99, 102, 241, 0.1)
+    OVERLAY_MARQUEE_STROKE_COLOR: arrayToColor(99, 102, 241, 0.5), // rgba(99, 102, 241, 0.5)
     OVERLAY_MARQUEE_STROKE_WIDTH: 1,
-    OVERLAY_GHOST_VALID_FILL: [99, 102, 241, 0.1], // rgba(99, 102, 241, 0.1)
-    OVERLAY_GHOST_VALID_STROKE: [99, 102, 241, 0.5], // rgba(99, 102, 241, 0.5)
-    OVERLAY_GHOST_ERROR_FILL: [239, 68, 68, 0.1], // rgba(239, 68, 68, 0.1)
-    OVERLAY_GHOST_ERROR_STROKE: [239, 68, 68, 0.5], // rgba(239, 68, 68, 0.5)
+    OVERLAY_GHOST_VALID_FILL: arrayToColor(99, 102, 241, 0.1), // rgba(99, 102, 241, 0.1)
+    OVERLAY_GHOST_VALID_STROKE: arrayToColor(99, 102, 241, 0.5), // rgba(99, 102, 241, 0.5)
+    OVERLAY_GHOST_ERROR_FILL: arrayToColor(239, 68, 68, 0.1), // rgba(239, 68, 68, 0.1)
+    OVERLAY_GHOST_ERROR_STROKE: arrayToColor(239, 68, 68, 0.5), // rgba(239, 68, 68, 0.5)
     OVERLAY_GHOST_STROKE_WIDTH: 2,
-    OVERLAY_SCREEN_TITLE_COLOR: new Float32Array([161 / 255, 161 / 255, 170 / 255, 1]), // rgba(161/255, 161/255, 170/255, 1)
+    OVERLAY_SCREEN_TITLE_COLOR: arrayToColor(161, 161, 170),
     OVERLAY_SCREEN_TITLE_FONT_SIZE: 12,
     OVERLAY_SCREEN_TITLE_MARGIN_Y: 8,
 
@@ -125,9 +128,9 @@ function createDefaults(): ConfigStore {
 
     // Grid
     GRID_SHOW: true,
-    GRID_COLOR_MINOR: [255, 255, 255, 0.05], // rgba(255, 255, 255, 0.05)
-    GRID_COLOR_MAJOR: [255, 255, 255, 0.12], // rgba(255, 255, 255, 0.12)
-    GRID_COLOR_AXIS: [99, 102, 241, 0.3], // rgba(99, 102, 241, 0.3)
+    GRID_COLOR_MINOR: arrayToColor(1, 1, 1, 0.05), // rgba(1, 1, 1, 0.05)
+    GRID_COLOR_MAJOR: arrayToColor(1, 1, 1, 0.12), // rgba(1, 1, 1, 0.12)
+    GRID_COLOR_AXIS: arrayToColor(99, 102, 241, 0.3), // rgba(99, 102, 241, 0.3)
     GRID_SUB_GRID_THRESHOLD: 1.5,
     GRID_BASE_SIZE: 100,
     GRID_SUB_GRID_DIVISION: 10,
@@ -169,7 +172,7 @@ function createDefaults(): ConfigStore {
     LUMINANCE_HUE_BLUE_WEIGHT: 0.072,
 
     // Box Shadow
-    BOX_SHADOW_DEFAULT_COLOR_FLOAT: new Float32Array([0, 0, 0, 0.5]), // rgba(0, 0, 0, 0.5)
+    BOX_SHADOW_DEFAULT_COLOR: arrayToColor(0, 0, 0, 0.5), // rgba(0, 0, 0, 0.5)
 
     // Keyboard
     KEYBOARD_PAN_SHORTCUT: 'Space',

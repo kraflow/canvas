@@ -1,5 +1,5 @@
-import type { Canvas, CanvasKit, Image } from 'canvaskit-wasm'
-import type { ImageStyle, ColorValue } from '@/core/styles'
+import type { Canvas, CanvasKit, Color, Image } from 'canvaskit-wasm'
+import type { ImageStyle } from '@/core/styles'
 import type { LayoutRect } from '../types'
 import type { DrawContext } from './draw-context'
 import { toColor } from './color'
@@ -242,7 +242,7 @@ function drawRepeatedImage(
 
 function makeTintColorFilter(
   ck: CanvasKit,
-  tintColor: ColorValue,
+  tintColor: Color,
 ): ReturnType<typeof ck.ColorFilter.MakeBlend> | null {
   const color = toColor(ck, tintColor)
   return ck.ColorFilter.MakeBlend(color, ck.BlendMode.SrcIn)
