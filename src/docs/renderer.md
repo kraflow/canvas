@@ -116,3 +116,8 @@ Renders a Text element. Uses the `FontSystem` to build and cache paragraphs.
 ### `renderImage(ck, canvas, image, style, rect, ctx?)`
 
 Renders an Image element. Supports `objectFit` modes: `cover`, `contain`, `fill`, `center`, `scale-down`, `repeat`.
+
+**Skeleton Placeholder:** When the image is `null` (still loading), a skeleton placeholder is automatically rendered with:
+
+- Light gray background with subtle diagonal shine
+- Picture icon (frame with mountains and sun) centered in the node

@@ -79,6 +79,14 @@ const unsubscribe = interaction.on((event: InteractionEvent) => {
 
 ---
 
+## Drag Optimization
+
+During node dragging, the `InteractionManager` uses `scene.setWorldPosition()` instead of `applyStyle()` to avoid expensive Yoga layout calculations on every frame. This provides smooth 60fps dragging even with complex node hierarchies.
+
+When drag ends, the final position is synced to Yoga via `applyStyle()` so the layout system resumes control.
+
+---
+
 ## Keyboard Shortcuts (Built-in)
 
 - **Spacebar (Hold):** Temporarily switches to `'move'` mode for panning. Returns to `'edit'` on release.

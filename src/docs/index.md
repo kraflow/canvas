@@ -12,26 +12,31 @@ src/core/
 │   ├── load.ts       # CanvasKit WASM loader
 │   └── types.ts      # LayoutRect, RendererOptions
 ├── interaction/      # Interaction manager and mode logic
-│   ├── InteractionManager.ts # Edit, Move, Play modes
+│   ├── InteractionManager.ts # Edit, Move, Play modes (with drag optimization)
 │   └── types.ts      # InteractionState, Events
 ├── scene/            # Scene graph with Yoga layout and Spatial Index
 │   ├── scene-graph.ts
+│   ├── yoga-loader.ts # Conditional CDN loading for Yoga WASM
 │   ├── SpatialIndex.ts
 │   ├── style-sync.ts
+│   ├── text-measure-cache.ts
 │   └── types.ts
 ├── fonts/            # Font loading, paragraph building, text segmentation
 │   ├── font-system.ts
-│   ├── font-manifest.ts
+│   ├── font-loader.ts
+│   ├── font-mgr-factory.ts
 │   ├── paragraph-builder.ts
 │   └── ...
 ├── viewport/         # Viewport (Panning, Zooming)
 │   └── Viewport.ts
-└── styles/           # React Native–compatible style definitions
-    └── types/
-        ├── flex.ts   # FlexStyle (layout props)
-        ├── view.ts   # ViewStyle (visual props)
-        ├── text.ts   # TextStyle
-        └── image.ts  # ImageStyle
+├── styles/           # React Native–compatible style definitions
+│   └── types/
+│       ├── flex.ts   # FlexStyle (layout props)
+│       ├── view.ts   # ViewStyle (visual props)
+│       ├── text.ts   # TextStyle
+│       └── image.ts  # ImageStyle
+└── utils/            # Utility functions
+    └── dev-error.ts  # Development error handling
 ```
 
 ## Quick Start
@@ -95,3 +100,42 @@ Next: See individual module docs:
 - [Font System](./fonts.md)
 - [Styles](./styles.md)
 - [DrawContext & ImageCache](./resource-management.md)
+
+## Configuration
+
+The library uses a centralized configuration system in `constants.ts`:
+
+```ts
+import { CONFIG, configure, resetConfig } from '@/core/constants'
+
+// Access current values
+console.log(CONFIG.TEXT_DEFAULT_FONT_SIZE) // 14
+console.log(CONFIG.VIEWPORT_MIN_ZOOM) // 0.01
+
+// Update configuration at runtime
+configure({
+  TEXT_DEFAULT_FONT_SIZE: 16,
+  GRID_SHOW: false,
+})
+
+// Reset to defaults
+resetConfig()
+```
+
+Key configuration categories:
+
+- **Colors**: Canvas background, overlay colors (hover, selection, marquee)
+- **Viewport**: Min/max zoom, default zoom, wheel sensitivity
+- **Grid**: Colors, thresholds, stroke widths
+- **Text**: Default font, sizes, cache limits
+- **Rendering**: Blur precision, border dash/dot multipliers
+
+Environment detection:
+
+```ts
+import { IS_DEV } from '@/core/constants'
+
+if (IS_DEV) {
+  // Development-only code
+}
+```
