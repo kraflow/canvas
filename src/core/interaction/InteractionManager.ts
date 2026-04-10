@@ -42,6 +42,8 @@ export class InteractionManager {
   >()
   private listeners: Set<InteractionCallback> = new Set()
   private originalMode: InteractionMode | null = null
+  private lastClickTime = 0
+  private lastClickTargetId = ''
 
   constructor(canvas: HTMLCanvasElement, scene: SceneGraph, viewport?: Viewport) {
     this.canvas = canvas
@@ -114,21 +116,55 @@ export class InteractionManager {
 
     if (hit) {
       let targetId = hit.id
+      let isScreen = false
 
       // If we hit a root node, prefer its screen
       for (const s of this.scene.allScreens) {
         if (s.root.id === hit.id) {
           targetId = s.id
+          isScreen = true
           break
         }
       }
 
-      if (!this.state.selectedNodes.has(targetId)) {
-        if (!e.shiftKey) this.state.selectedNodes.clear()
-        this.state.selectedNodes.add(targetId)
-      } else if (e.shiftKey) {
-        this.state.selectedNodes.delete(targetId)
-        return
+      const now = Date.now()
+      const isDoubleClick = (now - this.lastClickTime < 350) && (this.lastClickTargetId === targetId)
+      this.lastClickTime = now
+      this.lastClickTargetId = targetId
+
+      if (isScreen) {
+        if (!isDoubleClick) {
+          // single click or others -> start marquee / clear selection, do NOT select the screen
+          this.state.isBoxSelecting = true
+          this.boxStartPoint = worldPoint
+          if (!e.shiftKey) {
+            this.state.selectedNodes.clear()
+          }
+          this.dispatch('boxSelectStart', null, e, worldPoint.x, worldPoint.y)
+          return
+        } else {
+          // double click on screen -> select it
+          if (!this.state.selectedNodes.has(targetId)) {
+            if (!e.shiftKey) this.state.selectedNodes.clear()
+            this.state.selectedNodes.add(targetId)
+          } else if (e.shiftKey) {
+            this.state.selectedNodes.delete(targetId)
+            return
+          }
+        }
+      } else {
+        // nested nodes -> select on single click, ignore on double click
+        if (isDoubleClick) {
+          return
+        }
+
+        if (!this.state.selectedNodes.has(targetId)) {
+          if (!e.shiftKey) this.state.selectedNodes.clear()
+          this.state.selectedNodes.add(targetId)
+        } else if (e.shiftKey) {
+          this.state.selectedNodes.delete(targetId)
+          return
+        }
       }
 
       this.state.isDragging = true
@@ -138,6 +174,7 @@ export class InteractionManager {
       this.dragStartStates.clear()
       for (const id of this.state.selectedNodes) {
         const screen = this.scene.getScreen(id)
+
         if (screen) {
           const gX = worldPoint.x - screen.x
           const gY = worldPoint.y - screen.y
